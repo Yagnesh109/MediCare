@@ -1,0 +1,22 @@
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "medicare-app-119f4",
+          "appId": "1:907077985621:android:8ee3187e9b44baa0b03bdc",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "medicare-app-119f4",
+          "configurations": {
+            "android": "1:907077985621:android:8ee3187e9b44baa0b03bdc",
+            "ios": "1:907077985621:ios:1abe2378fe7dec12b03bdc"
+          }
+        }
+      }
+    }
+  }
+}

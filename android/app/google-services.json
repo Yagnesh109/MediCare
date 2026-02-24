@@ -1,0 +1,54 @@
+{
+  "project_info": {
+    "project_number": "907077985621",
+    "project_id": "medicare-app-119f4",
+    "storage_bucket": "medicare-app-119f4.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:907077985621:android:8ee3187e9b44baa0b03bdc",
+        "android_client_info": {
+          "package_name": "com.healinghand.medicare.medicare_app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "907077985621-u3pstrikv7j52rfmangpdft6sejcroqm.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.healinghand.medicare.medicare_app",
+            "certificate_hash": "83764134c07bf8ca98c8021414f5cf8f9c5ab55a"
+          }
+        },
+        {
+          "client_id": "907077985621-efg16j3qph79tjdmsuilu3ua06kjrap6.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB0Q1kR7wYom0JE7Z1RMwkBf7zdmNLWk6s"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "907077985621-efg16j3qph79tjdmsuilu3ua06kjrap6.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "907077985621-pl99n3edoa2fkpb5gik8v9qlo52m1ipc.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.healinghand.medicare.medicareApp"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
