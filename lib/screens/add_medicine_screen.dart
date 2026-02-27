@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -11,6 +10,7 @@ import 'package:medicare_app/services/gemini_prescription_service.dart';
 import 'package:medicare_app/services/notification_service.dart';
 import 'package:medicare_app/widgets/app_bar_pulse_indicator.dart';
 import 'package:medicare_app/widgets/app_navigation_drawer.dart';
+import 'package:medicare_app/widgets/chatbot_fab.dart';
 
 class AddMedicineScreen extends StatefulWidget {
   const AddMedicineScreen({super.key});
@@ -50,6 +50,7 @@ class _AddMedicineScreenState extends State<AddMedicineScreen> {
   bool _isImportingPrescription = false;
   bool _didLoadArgs = false;
   String? _editingMedicineId;
+  _AddMedicineEntryMode _entryMode = _AddMedicineEntryMode.select;
 
   @override
   void dispose() {
@@ -78,6 +79,7 @@ class _AddMedicineScreenState extends State<AddMedicineScreen> {
       return;
     }
     _editingMedicineId = medicineId;
+    _entryMode = _AddMedicineEntryMode.manual;
 
     _nameController.text = (args['name'] ?? '').toString();
     _dosageController.text = (args['dosage'] ?? '').toString();
@@ -316,7 +318,6 @@ class _AddMedicineScreenState extends State<AddMedicineScreen> {
 
       final extracted = await GeminiPrescriptionService.instance
           .extractFromImagePath(picked.path);
-
       final parsedFallback = _extractFromPrescription(extracted.rawText);
       final firstMedicine =
           extracted.medicines.isNotEmpty ? extracted.medicines.first : null;
@@ -336,13 +337,8 @@ class _AddMedicineScreenState extends State<AddMedicineScreen> {
             _normalizeDate(extracted.endDateText) ?? parsedFallback.endDateText,
       );
 
-      final rawPreview = extracted.rawText.trim().isNotEmpty
-          ? extracted.rawText
-          : const JsonEncoder.withIndent('  ').convert(extracted.responseBody);
-
       final verified = await _verifyExtractedPrescription(
         draft,
-        rawPreview,
         extracted.medicines,
       );
       if (verified == null || !mounted) {
@@ -558,7 +554,6 @@ class _AddMedicineScreenState extends State<AddMedicineScreen> {
 
   Future<_PrescriptionImportResult?> _verifyExtractedPrescription(
     _PrescriptionDraft draft,
-    String rawText,
     List<PrescriptionMedicine> extractedMedicines,
   ) async {
     final nameController = TextEditingController(text: draft.name);
@@ -848,25 +843,6 @@ class _AddMedicineScreenState extends State<AddMedicineScreen> {
                             labelText: 'End Date (tap calendar)',
                           ),
                         ),
-                        const SizedBox(height: 10),
-                        const Text(
-                          'Extracted text',
-                          style: TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                        const SizedBox(height: 6),
-                        Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF5FAFF),
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: const Color(0xFFD9E8F8)),
-                          ),
-                          child: Text(
-                            rawText,
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
                         const Text(
                           'User verification required: please confirm medicine, dosage, schedule, and dates.',
                           style: TextStyle(fontSize: 12, color: Colors.black54),
@@ -917,7 +893,19 @@ class _AddMedicineScreenState extends State<AddMedicineScreen> {
     return result;
   }
 
-  Future<void> _saveMedicine() async {
+  void _resetManualFormAfterSave() {
+    _nameController.clear();
+    _dosageController.clear();
+    _startDateController.clear();
+    _endDateController.clear();
+    _startDate = null;
+    _endDate = null;
+    _doses
+      ..clear()
+      ..add(const _DoseFormRow());
+  }
+
+  Future<void> _saveMedicine({bool addAnother = false}) async {
     if (!_formKey.currentState!.validate()) return;
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
@@ -975,7 +963,16 @@ class _AddMedicineScreenState extends State<AddMedicineScreen> {
       );
 
       if (!mounted) return;
-      Navigator.pop(context, true);
+      final isEditing =
+          _editingMedicineId != null && _editingMedicineId!.isNotEmpty;
+      if (addAnother && !isEditing) {
+        setState(_resetManualFormAfterSave);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Medicine saved. Add another medicine.')),
+        );
+      } else {
+        Navigator.pop(context, true);
+      }
     } catch (e) {
       if (!mounted) return;
       debugPrint('Save medicine failed: $e');
@@ -1108,6 +1105,7 @@ class _AddMedicineScreenState extends State<AddMedicineScreen> {
   Widget build(BuildContext context) {
     final isEditing =
         _editingMedicineId != null && _editingMedicineId!.isNotEmpty;
+    final showEntrySelection = !isEditing && _entryMode == _AddMedicineEntryMode.select;
     return Scaffold(
       appBar: AppBar(
         automaticallyImplyLeading: false,
@@ -1126,54 +1124,107 @@ class _AddMedicineScreenState extends State<AddMedicineScreen> {
       drawer: const AppNavigationDrawer(
         currentRoute: MyApp.routeAddMedicine,
       ),
+      floatingActionButton: const ChatbotFab(heroTag: 'chatbot_add_medicine'),
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Card(
-            elevation: 3,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const Row(
+        child: showEntrySelection
+            ? Padding(
+                padding: const EdgeInsets.all(16),
+                child: Card(
+                  elevation: 3,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Icon(Icons.medication, color: Color(0xFF1565C0)),
-                        SizedBox(width: 8),
-                        Text(
-                          'Medicine Details',
+                        const Text(
+                          'Choose Entry Method',
                           style: TextStyle(
-                            fontSize: 18,
+                            fontSize: 20,
                             fontWeight: FontWeight.w700,
                             color: Color(0xFF0D47A1),
                           ),
                         ),
+                        const SizedBox(height: 14),
+                        OutlinedButton.icon(
+                          onPressed: _isImportingPrescription
+                              ? null
+                              : _importFromPrescription,
+                          icon: _isImportingPrescription
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child:
+                                      CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.document_scanner_outlined),
+                          label: Text(
+                            _isImportingPrescription
+                                ? 'Reading prescription...'
+                                : 'OCR Extraction',
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        ElevatedButton.icon(
+                          onPressed: () {
+                            setState(() {
+                              _entryMode = _AddMedicineEntryMode.manual;
+                            });
+                          },
+                          icon: const Icon(Icons.edit_note_outlined),
+                          label: const Text('Manual Entry'),
+                        ),
                       ],
                     ),
-                    const SizedBox(height: 16),
-                    OutlinedButton.icon(
-                      onPressed: _isImportingPrescription
-                          ? null
-                          : _importFromPrescription,
-                      icon: _isImportingPrescription
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.document_scanner_outlined),
-                      label: Text(
-                        _isImportingPrescription
-                            ? 'Reading prescription...'
-                            : 'Add From Prescription (Gemini Vision)',
-                      ),
-                    ),
-                    const SizedBox(height: 12),
+                  ),
+                ),
+              )
+            : SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Card(
+                  elevation: 3,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (!isEditing) ...[
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: TextButton.icon(
+                                onPressed: () {
+                                  setState(() {
+                                    _entryMode = _AddMedicineEntryMode.select;
+                                  });
+                                },
+                                icon: const Icon(Icons.swap_horiz),
+                                label: const Text('Change Method'),
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                          ],
+                          const Row(
+                            children: [
+                              Icon(Icons.medication, color: Color(0xFF1565C0)),
+                              SizedBox(width: 8),
+                              Text(
+                                'Medicine Details',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFF0D47A1),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
                     TextFormField(
                       controller: _nameController,
                       decoration: const InputDecoration(
@@ -1333,7 +1384,7 @@ class _AddMedicineScreenState extends State<AddMedicineScreen> {
                     ),
                     const SizedBox(height: 20),
                     ElevatedButton.icon(
-                      onPressed: _isSaving ? null : _saveMedicine,
+                      onPressed: _isSaving ? null : () => _saveMedicine(),
                       icon: _isSaving
                           ? const SizedBox(
                               width: 18,
@@ -1346,6 +1397,15 @@ class _AddMedicineScreenState extends State<AddMedicineScreen> {
                           : const Icon(Icons.save_outlined),
                       label: Text(_isSaving ? 'Saving...' : 'Save Medicine'),
                     ),
+                    const SizedBox(height: 10),
+                    if (!isEditing)
+                      OutlinedButton.icon(
+                        onPressed: _isSaving
+                            ? null
+                            : () => _saveMedicine(addAnother: true),
+                        icon: const Icon(Icons.playlist_add_outlined),
+                        label: const Text('Save & Add Another Medicine'),
+                      ),
                   ],
                 ),
               ),
@@ -1356,6 +1416,8 @@ class _AddMedicineScreenState extends State<AddMedicineScreen> {
     );
   }
 }
+
+enum _AddMedicineEntryMode { select, manual }
 
 class _DoseFormRow {
   const _DoseFormRow({

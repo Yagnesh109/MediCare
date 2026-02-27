@@ -4,6 +4,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:medicare_app/app.dart';
 import 'package:medicare_app/firebase_options.dart';
+import 'package:medicare_app/services/app_language_controller.dart';
 import 'package:medicare_app/services/notification_service.dart';
 
 Future<void> main() async {
@@ -17,5 +18,6 @@ Future<void> main() async {
   try {
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
   } catch (_) {}
+  await AppLanguageController.instance.init();
   runApp(const MyApp());
 }

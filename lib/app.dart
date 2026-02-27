@@ -1,10 +1,14 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:medicare_app/l10n/app_localizations.dart';
 import 'package:medicare_app/screens/add_medicine_screen.dart';
 import 'package:medicare_app/screens/adherence_screen.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:medicare_app/screens/ai_chatbot_screen.dart';
+import 'package:medicare_app/screens/language_settings_screen.dart';
 import 'package:medicare_app/screens/home_screen.dart';
-import 'package:medicare_app/screens/side_effect_checker_screen.dart';
+import 'package:medicare_app/services/app_language_controller.dart';
 import 'package:medicare_app/services/notification_service.dart';
 import 'screens/caregivers_screen.dart';
 import 'screens/profile_screen.dart';
@@ -48,64 +52,84 @@ class MyApp extends StatelessWidget {
   static const String routeProfile = '/profile';
   static const String routeAdherence = '/adherence';
   static const String routeSideEffects = '/side_effects';
+  static const String routeSettings = '/settings';
+  static const String routeChatbot = '/chatbot';
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'Medicare',
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF1565C0),
-          brightness: Brightness.light,
-          primary: const Color(0xFF1565C0),
-          secondary: const Color(0xFF42A5F5),
-        ),
-        scaffoldBackgroundColor: const Color(0xFFF5FAFF),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFF1565C0),
-          foregroundColor: Colors.white,
-          centerTitle: true,
-          titleTextStyle: TextStyle(
-            color: Color(0xFFF0F4F8),
-            fontSize: 22,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0.2,
-          ),
-        ),
-        elevatedButtonTheme: ElevatedButtonThemeData(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF1565C0),
-            foregroundColor: Colors.white,
-            minimumSize: const Size.fromHeight(50),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
+    return ValueListenableBuilder<Locale>(
+      valueListenable: AppLanguageController.instance.localeNotifier,
+      builder: (context, locale, _) {
+        return MaterialApp(
+          debugShowCheckedModeBanner: false,
+          onGenerateTitle: (context) => AppLocalizations.of(context)!.appTitle,
+          locale: locale,
+          supportedLocales: const [
+            Locale('en'),
+            Locale('hi'),
+            Locale('mr'),
+          ],
+          localizationsDelegates: const [
+            AppLocalizations.delegate,
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          theme: ThemeData(
+            useMaterial3: true,
+            colorScheme: ColorScheme.fromSeed(
+              seedColor: const Color(0xFF1565C0),
+              brightness: Brightness.light,
+              primary: const Color(0xFF1565C0),
+              secondary: const Color(0xFF42A5F5),
+            ),
+            scaffoldBackgroundColor: const Color(0xFFF5FAFF),
+            appBarTheme: const AppBarTheme(
+              backgroundColor: Color(0xFF1565C0),
+              foregroundColor: Colors.white,
+              centerTitle: true,
+              titleTextStyle: TextStyle(
+                color: Color(0xFFF0F4F8),
+                fontSize: 22,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.2,
+              ),
+            ),
+            elevatedButtonTheme: ElevatedButtonThemeData(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF1565C0),
+                foregroundColor: Colors.white,
+                minimumSize: const Size.fromHeight(50),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+            inputDecorationTheme: InputDecorationTheme(
+              filled: true,
+              fillColor: Colors.white,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: Color(0xFFB3D3F2)),
+              ),
             ),
           ),
-        ),
-        inputDecorationTheme: InputDecorationTheme(
-          filled: true,
-          fillColor: Colors.white,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: Color(0xFFB3D3F2)),
-          ),
-        ),
-      ),
-      home: const _AuthGate(),
-      routes: {
-        routeLogin: (context) => const LoginScreen(),
-        routeHome: (context) => const HomeScreen(),
-        routeAddMedicine: (context) => const AddMedicineScreen(),
-        routeSignup: (context) => const SignupScreen(),
-        routeCaregivers: (context) => const CaregiversScreen(),
-        routeProfile: (context) => const ProfileScreen(),
-        routeAdherence: (context) => const AdherenceScreen(),
-        routeSideEffects: (context) => const SideEffectCheckerScreen(),
+          home: const _AuthGate(),
+          routes: {
+            routeLogin: (context) => const LoginScreen(),
+            routeHome: (context) => const HomeScreen(),
+            routeAddMedicine: (context) => const AddMedicineScreen(),
+            routeSignup: (context) => const SignupScreen(),
+            routeCaregivers: (context) => const CaregiversScreen(),
+            routeProfile: (context) => const ProfileScreen(),
+            routeAdherence: (context) => const AdherenceScreen(),
+            routeSettings: (context) => const LanguageSettingsScreen(),
+            routeChatbot: (context) => const AiChatbotScreen(),
+          },
+        );
       },
     );
   }
@@ -175,14 +199,23 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _phoneController = TextEditingController();
+  final _otpController = TextEditingController();
 
   bool _isLoginLoading = false;
   bool _isGoogleLoading = false;
+  bool _isSendingOtp = false;
+  bool _isVerifyingOtp = false;
+  bool _otpSent = false;
+  String? _verificationId;
+  int? _forceResendingToken;
 
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _phoneController.dispose();
+    _otpController.dispose();
     super.dispose();
   }
 
@@ -252,8 +285,135 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  String _normalizedPhone() {
+    final raw = _phoneController.text.trim();
+    if (raw.isEmpty) return '';
+    if (raw.startsWith('+')) {
+      return '+${raw.substring(1).replaceAll(RegExp(r'[^0-9]'), '')}';
+    }
+    final digits = raw.replaceAll(RegExp(r'[^0-9]'), '');
+    if (digits.length == 10) {
+      return '+91$digits';
+    }
+    return digits.isEmpty ? '' : '+$digits';
+  }
+
+  Future<void> _sendOtp() async {
+    final phone = _normalizedPhone();
+    if (phone.isEmpty || phone.length < 8) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Enter a valid phone number with country code'),
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isSendingOtp = true);
+    try {
+      setState(() {
+        _otpSent = false;
+        _verificationId = null;
+      });
+      await FirebaseAuth.instance.verifyPhoneNumber(
+        phoneNumber: phone,
+        forceResendingToken: _forceResendingToken,
+        timeout: const Duration(seconds: 60),
+        verificationCompleted: (PhoneAuthCredential credential) async {
+          // Keep OTP-only flow for explicit user verification.
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Verification available. Please enter OTP to login.'),
+            ),
+          );
+        },
+        verificationFailed: (FirebaseAuthException e) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(e.message ?? 'OTP send failed')),
+          );
+        },
+        codeSent: (String verificationId, int? resendToken) {
+          if (!mounted) return;
+          setState(() {
+            _verificationId = verificationId;
+            _forceResendingToken = resendToken;
+            _otpSent = true;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('OTP sent successfully')),
+          );
+        },
+        codeAutoRetrievalTimeout: (String verificationId) {
+          _verificationId = verificationId;
+        },
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isSendingOtp = false);
+      }
+    }
+  }
+
+  Future<void> _verifyOtp() async {
+    final verificationId = _verificationId;
+    final phone = _normalizedPhone();
+    final code = _otpController.text.trim();
+    if (verificationId == null || verificationId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Request OTP first')),
+      );
+      return;
+    }
+    if (phone.isEmpty || phone.length < 8) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter a valid phone number')),
+      );
+      return;
+    }
+    if (!RegExp(r'^\d{6}$').hasMatch(code)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter valid 6-digit OTP')),
+      );
+      return;
+    }
+
+    setState(() => _isVerifyingOtp = true);
+    try {
+      final credential = PhoneAuthProvider.credential(
+        verificationId: verificationId,
+        smsCode: code,
+      );
+      await FirebaseAuth.instance.signInWithCredential(credential);
+      await _initNotificationsAfterAuth();
+      if (!mounted) return;
+      Navigator.pushReplacementNamed(context, MyApp.routeHome);
+    } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message ?? 'OTP verification failed')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isVerifyingOtp = false);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return Scaffold(
       body: SafeArea(
         child: Center(
@@ -281,32 +441,32 @@ class _LoginScreenState extends State<LoginScreen> {
                           size: 54,
                         ),
                         const SizedBox(height: 10),
-                        const Text(
-                          'Medicare Login',
+                        Text(
+                          l10n.loginTitle,
                           textAlign: TextAlign.center,
-                          style: TextStyle(
+                          style: const TextStyle(
                             fontSize: 24,
                             fontWeight: FontWeight.w700,
                             color: Color(0xFF0D47A1),
                           ),
                         ),
                         const SizedBox(height: 6),
-                        const Text(
-                          'Manage your medication reminders',
+                        Text(
+                          l10n.loginSubtitle,
                           textAlign: TextAlign.center,
-                          style: TextStyle(color: Colors.black54),
+                          style: const TextStyle(color: Colors.black54),
                         ),
                         const SizedBox(height: 24),
                         TextFormField(
                           controller: _emailController,
                           keyboardType: TextInputType.emailAddress,
-                          decoration: const InputDecoration(
-                            labelText: 'Email',
+                          decoration: InputDecoration(
+                            labelText: l10n.email,
                             prefixIcon: Icon(Icons.email_outlined),
                           ),
                           validator: (value) {
                             if (value == null || value.trim().isEmpty) {
-                              return 'Please enter your email';
+                              return l10n.email;
                             }
                             return null;
                           },
@@ -315,13 +475,13 @@ class _LoginScreenState extends State<LoginScreen> {
                         TextFormField(
                           controller: _passwordController,
                           obscureText: true,
-                          decoration: const InputDecoration(
-                            labelText: 'Password',
+                          decoration: InputDecoration(
+                            labelText: l10n.password,
                             prefixIcon: Icon(Icons.lock_outline),
                           ),
                           validator: (value) {
                             if (value == null || value.isEmpty) {
-                              return 'Please enter your password';
+                              return l10n.password;
                             }
                             return null;
                           },
@@ -338,7 +498,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                     color: Colors.white,
                                   ),
                                 )
-                              : const Text('Login'),
+                              : Text(l10n.login),
                         ),
                         const SizedBox(height: 10),
                         OutlinedButton.icon(
@@ -351,7 +511,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                       CircularProgressIndicator(strokeWidth: 2),
                                 )
                               : const Icon(Icons.g_mobiledata, size: 28),
-                          label: const Text('Continue with Google'),
+                          label: Text(l10n.continueWithGoogle),
                           style: OutlinedButton.styleFrom(
                             minimumSize: const Size.fromHeight(50),
                             side: const BorderSide(color: Color(0xFF1565C0)),
@@ -365,10 +525,68 @@ class _LoginScreenState extends State<LoginScreen> {
                           onPressed: () {
                             Navigator.pushNamed(context, MyApp.routeSignup);
                           },
-                          child: const Text(
-                            "Don't have an account? Register",
+                          child: Text(l10n.noAccountRegister),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            const Expanded(child: Divider()),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 8),
+                              child: Text(l10n.or),
+                            ),
+                            const Expanded(child: Divider()),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        TextFormField(
+                          controller: _phoneController,
+                          keyboardType: TextInputType.phone,
+                          decoration: InputDecoration(
+                            labelText: l10n.phoneWithCode,
+                            prefixIcon: Icon(Icons.phone_outlined),
                           ),
                         ),
+                        if (_otpSent) ...[
+                          const SizedBox(height: 12),
+                          TextFormField(
+                            controller: _otpController,
+                            keyboardType: TextInputType.number,
+                            decoration: InputDecoration(
+                              labelText: l10n.enterOtp,
+                              prefixIcon: Icon(Icons.pin_outlined),
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 12),
+                        OutlinedButton(
+                          onPressed: _isSendingOtp ? null : _sendOtp,
+                          child: _isSendingOtp
+                              ? const SizedBox(
+                                  height: 18,
+                                  width: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : Text(_otpSent ? l10n.resendOtp : l10n.sendOtp),
+                        ),
+                        if (_otpSent) ...[
+                          const SizedBox(height: 10),
+                          ElevatedButton(
+                            onPressed: _isVerifyingOtp ? null : _verifyOtp,
+                            child: _isVerifyingOtp
+                                ? const SizedBox(
+                                    height: 18,
+                                    width: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : Text(l10n.verifyOtpLogin),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -487,6 +705,7 @@ class _SignupScreenState extends State<SignupScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return Scaffold(
       body: SafeArea(
         child: Center(
@@ -514,26 +733,26 @@ class _SignupScreenState extends State<SignupScreen> {
                           size: 54,
                         ),
                         const SizedBox(height: 10),
-                        const Text(
-                          'Create Medicare Account',
+                        Text(
+                          l10n.createAccountTitle,
                           textAlign: TextAlign.center,
-                          style: TextStyle(
+                          style: const TextStyle(
                             fontSize: 24,
                             fontWeight: FontWeight.w700,
                             color: Color(0xFF0D47A1),
                           ),
                         ),
                         const SizedBox(height: 6),
-                        const Text(
-                          'Sign up to start medication reminders',
+                        Text(
+                          l10n.createAccountSubtitle,
                           textAlign: TextAlign.center,
-                          style: TextStyle(color: Colors.black54),
+                          style: const TextStyle(color: Colors.black54),
                         ),
                         const SizedBox(height: 24),
                         TextFormField(
                           controller: _nameController,
-                          decoration: const InputDecoration(
-                            labelText: 'Full Name',
+                          decoration: InputDecoration(
+                            labelText: l10n.fullName,
                             prefixIcon: Icon(Icons.person_outline),
                           ),
                           validator: (value) {
@@ -547,8 +766,8 @@ class _SignupScreenState extends State<SignupScreen> {
                         TextFormField(
                           controller: _emailController,
                           keyboardType: TextInputType.emailAddress,
-                          decoration: const InputDecoration(
-                            labelText: 'Email',
+                          decoration: InputDecoration(
+                            labelText: l10n.email,
                             prefixIcon: Icon(Icons.email_outlined),
                           ),
                           validator: (value) {
@@ -562,8 +781,8 @@ class _SignupScreenState extends State<SignupScreen> {
                         TextFormField(
                           controller: _passwordController,
                           obscureText: true,
-                          decoration: const InputDecoration(
-                            labelText: 'Password',
+                          decoration: InputDecoration(
+                            labelText: l10n.password,
                             prefixIcon: Icon(Icons.lock_outline),
                           ),
                           validator: (value) {
@@ -577,8 +796,8 @@ class _SignupScreenState extends State<SignupScreen> {
                         TextFormField(
                           controller: _confirmController,
                           obscureText: true,
-                          decoration: const InputDecoration(
-                            labelText: 'Confirm Password',
+                          decoration: InputDecoration(
+                            labelText: l10n.confirmPassword,
                             prefixIcon: Icon(Icons.lock_reset_outlined),
                           ),
                           validator: (value) {
@@ -600,7 +819,7 @@ class _SignupScreenState extends State<SignupScreen> {
                                     color: Colors.white,
                                   ),
                                 )
-                              : const Text('Create Account'),
+                              : Text(l10n.createAccount),
                         ),
                         const SizedBox(height: 10),
                         OutlinedButton.icon(
@@ -613,7 +832,7 @@ class _SignupScreenState extends State<SignupScreen> {
                                       CircularProgressIndicator(strokeWidth: 2),
                                 )
                               : const Icon(Icons.g_mobiledata, size: 28),
-                          label: const Text('Continue with Google'),
+                          label: Text(l10n.continueWithGoogle),
                           style: OutlinedButton.styleFrom(
                             minimumSize: const Size.fromHeight(50),
                             side: const BorderSide(color: Color(0xFF1565C0)),
@@ -630,7 +849,7 @@ class _SignupScreenState extends State<SignupScreen> {
                               MyApp.routeLogin,
                             );
                           },
-                          child: const Text('Already have an account? Login'),
+                          child: Text(l10n.alreadyHaveAccount),
                         ),
                       ],
                     ),

@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:medicare_app/l10n/app_localizations.dart';
 import 'package:medicare_app/app.dart';
 import 'package:medicare_app/services/side_effect_ai_service.dart';
 import 'package:medicare_app/widgets/app_bar_pulse_indicator.dart';
@@ -216,12 +217,13 @@ class _SideEffectCheckerScreenState extends State<SideEffectCheckerScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return Scaffold(
       appBar: AppBar(
         flexibleSpace: const AppBarPulseBackground(),
-        title: const Padding(
-          padding: EdgeInsets.only(top: 4),
-          child: Text('Side Effect Checker'),
+        title: Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Text(l10n.sideEffectChecker),
         ),
       ),
       drawer: const AppNavigationDrawer(
@@ -252,14 +254,14 @@ class _SideEffectCheckerScreenState extends State<SideEffectCheckerScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Row(
+                      Row(
                         children: [
-                          Icon(Icons.medical_information_rounded,
+                          const Icon(Icons.medical_information_rounded,
                               color: Color(0xFF1E5E9F), size: 34),
-                          SizedBox(width: 10),
+                          const SizedBox(width: 10),
                           Text(
-                            'Check Symptoms After Medicine',
-                            style: TextStyle(
+                            l10n.sideEffectChecker,
+                            style: const TextStyle(
                               fontSize: 22,
                               fontWeight: FontWeight.w700,
                               color: Color(0xFF0F2A59),
@@ -271,7 +273,7 @@ class _SideEffectCheckerScreenState extends State<SideEffectCheckerScreen> {
                       TextFormField(
                         controller: _medicineController,
                         decoration: _pillInputDecoration(
-                          hint: 'Medicine Name',
+                          hint: l10n.medicineName,
                           icon: Icons.medication_outlined,
                         ),
                         validator: (value) {
@@ -285,7 +287,7 @@ class _SideEffectCheckerScreenState extends State<SideEffectCheckerScreen> {
                       TextFormField(
                         controller: _doseController,
                         decoration: _pillInputDecoration(
-                          hint: 'Dose (optional)',
+                          hint: l10n.doseOptional,
                           icon: Icons.hourglass_empty_rounded,
                         ),
                       ),
@@ -295,7 +297,7 @@ class _SideEffectCheckerScreenState extends State<SideEffectCheckerScreen> {
                         minLines: 1,
                         maxLines: 3,
                         decoration: _pillInputDecoration(
-                          hint: 'Symptoms (comma separated)',
+                          hint: l10n.symptomsComma,
                           icon: Icons.sick_outlined,
                         ),
                         validator: (value) {
@@ -351,7 +353,7 @@ class _SideEffectCheckerScreenState extends State<SideEffectCheckerScreen> {
                       TextFormField(
                         controller: _conditionsController,
                         decoration: _pillInputDecoration(
-                          hint: 'Known conditions (comma separated)',
+                          hint: l10n.knownConditionsComma,
                           icon: Icons.medical_services_outlined,
                         ),
                       ),
@@ -361,7 +363,7 @@ class _SideEffectCheckerScreenState extends State<SideEffectCheckerScreen> {
                         minLines: 1,
                         maxLines: 3,
                         decoration: _pillInputDecoration(
-                          hint: 'Extra notes (optional)',
+                          hint: l10n.extraNotesOptional,
                           icon: Icons.note_alt_outlined,
                         ),
                       ),
@@ -399,8 +401,8 @@ class _SideEffectCheckerScreenState extends State<SideEffectCheckerScreen> {
                                   )
                                 : const Icon(Icons.analytics_outlined),
                             label: Text(_isLoading
-                                ? 'Analyzing...'
-                                : 'Analyze Side Effects'),
+                                ? l10n.analyzing
+                                : l10n.analyzeSideEffects),
                           ),
                         ),
                       ),
@@ -432,8 +434,8 @@ class _SideEffectCheckerScreenState extends State<SideEffectCheckerScreen> {
                     children: [
                       Row(
                         children: [
-                          const Text(
-                            'Analysis Result',
+                          Text(
+                            l10n.analysisResult,
                             style: TextStyle(
                                 fontSize: 18, fontWeight: FontWeight.w700),
                           ),
@@ -450,14 +452,14 @@ class _SideEffectCheckerScreenState extends State<SideEffectCheckerScreen> {
                         ],
                       ),
                       const SizedBox(height: 6),
-                      Text('Urgency: ${_result!.urgency}'),
+                      Text('${l10n.urgency}: ${_result!.urgency}'),
                       Text(
-                        'Doctor consultation needed: '
-                        '${_result!.doctorConsultationNeeded ? 'Yes' : 'No'}',
+                        '${l10n.doctorConsultNeeded}: '
+                        '${_result!.doctorConsultationNeeded ? l10n.yes : l10n.no}',
                       ),
                       Text(
-                          'Confidence: ${(_result!.confidence * 100).toStringAsFixed(0)}%'),
-                      Text('Source: ${_result!.source}'),
+                          '${l10n.confidence}: ${(_result!.confidence * 100).toStringAsFixed(0)}%'),
+                      Text('${l10n.source}: ${_result!.source}'),
                       const SizedBox(height: 10),
                       if (_result!.recommendation.isNotEmpty)
                         Padding(
@@ -467,14 +469,14 @@ class _SideEffectCheckerScreenState extends State<SideEffectCheckerScreen> {
                             style: const TextStyle(fontWeight: FontWeight.w600),
                           ),
                         ),
-                      _bulletList('Possible Reasons', _result!.possibleReasons),
+                      _bulletList(l10n.possibleReasons, _result!.possibleReasons),
                       _bulletList(
-                          'Immediate Actions', _result!.immediateActions),
-                      _bulletList('Warning Signs', _result!.warningSigns),
+                          l10n.immediateActions, _result!.immediateActions),
+                      _bulletList(l10n.warningSigns, _result!.warningSigns),
                       const Divider(),
-                      const Text(
-                        'This is guidance only, not a medical diagnosis.',
-                        style: TextStyle(color: Colors.black54),
+                      Text(
+                        l10n.guidanceOnly,
+                        style: const TextStyle(color: Colors.black54),
                       ),
                     ],
                   ),

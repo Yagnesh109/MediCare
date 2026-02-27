@@ -1,12 +1,14 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:medicare_app/l10n/app_localizations.dart';
 import 'package:medicare_app/app.dart';
 import 'package:medicare_app/models/medicine.dart';
 import 'package:medicare_app/services/dose_tracking_service.dart';
 import 'package:medicare_app/services/notification_service.dart';
 import 'package:medicare_app/widgets/app_bar_pulse_indicator.dart';
 import 'package:medicare_app/widgets/app_navigation_drawer.dart';
+import 'package:medicare_app/widgets/chatbot_fab.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -44,7 +46,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final result = await Navigator.pushNamed(context, '/add_medicine');
     if (result == true && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Medicine saved successfully')),
+        SnackBar(content: Text(AppLocalizations.of(context)!.medicineSaved)),
       );
       setState(() {});
     }
@@ -66,7 +68,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
     if (result == true && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Medicine updated successfully')),
+        SnackBar(content: Text(AppLocalizations.of(context)!.medicineUpdated)),
       );
       setState(() {});
     }
@@ -467,11 +469,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Widget _buildSectionTitle() {
-    return const Row(
+    final l10n = AppLocalizations.of(context)!;
+    return Row(
       children: [
         Text(
-          "Today's Schedule",
-          style: TextStyle(
+          l10n.todaysSchedule,
+          style: const TextStyle(
             fontSize: 22,
             fontWeight: FontWeight.w700,
             color: Color(0xFF111827),
@@ -489,6 +492,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Widget _buildEmptyScheduleCard() {
+    final l10n = AppLocalizations.of(context)!;
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 26, 20, 26),
       decoration: BoxDecoration(
@@ -502,40 +506,31 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
         ],
       ),
-      child: const Column(
+      child: Column(
         children: [
-          Icon(
+          const Icon(
             Icons.medication_liquid_outlined,
             size: 92,
             color: Color(0xFFBCD8F6),
           ),
-          SizedBox(height: 12),
+          const SizedBox(height: 12),
           Text(
-            'No medicines added yet',
-            style: TextStyle(
+            l10n.noMedicinesYet,
+            style: const TextStyle(
               fontSize: 22,
               fontWeight: FontWeight.w700,
               color: Color(0xFF111827),
             ),
             textAlign: TextAlign.center,
           ),
-          SizedBox(height: 10),
+          const SizedBox(height: 10),
           Text(
-            'Tap the + button below to add your first medicine reminder.',
+            l10n.tapToAddFirstMedicine,
             textAlign: TextAlign.center,
-            style: TextStyle(
+            style: const TextStyle(
               fontSize: 16,
               color: Color(0xFF4B5563),
               height: 1.4,
-            ),
-          ),
-          SizedBox(height: 8),
-          Text(
-            'Stay healthy. Stay consistent.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 16,
-              color: Color(0xFF374151),
             ),
           ),
         ],
@@ -544,6 +539,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Widget _buildNoPendingTodayCard() {
+    final l10n = AppLocalizations.of(context)!;
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 26, 20, 26),
       decoration: BoxDecoration(
@@ -557,28 +553,28 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
         ],
       ),
-      child: const Column(
+      child: Column(
         children: [
-          Icon(
+          const Icon(
             Icons.task_alt_outlined,
             size: 92,
             color: Color(0xFFBCD8F6),
           ),
-          SizedBox(height: 12),
+          const SizedBox(height: 12),
           Text(
-            'No pending medicines for today',
-            style: TextStyle(
+            l10n.noPendingMedicinesToday,
+            style: const TextStyle(
               fontSize: 22,
               fontWeight: FontWeight.w700,
               color: Color(0xFF111827),
             ),
             textAlign: TextAlign.center,
           ),
-          SizedBox(height: 10),
+          const SizedBox(height: 10),
           Text(
-            'Taken and missed medicines are available in Adherence History.',
+            l10n.adherenceContainsTakenMissed,
             textAlign: TextAlign.center,
-            style: TextStyle(
+            style: const TextStyle(
               fontSize: 16,
               color: Color(0xFF4B5563),
               height: 1.4,
@@ -590,6 +586,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Widget _buildAddMedicineButton() {
+    final l10n = AppLocalizations.of(context)!;
     return SizedBox(
       width: double.infinity,
       height: 76,
@@ -614,14 +611,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           child: InkWell(
             borderRadius: BorderRadius.circular(22),
             onTap: () => _openAddMedicine(context),
-            child: const Row(
+            child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.add_circle_outline, color: Colors.white, size: 30),
-                SizedBox(width: 10),
+                const Icon(Icons.add_circle_outline, color: Colors.white, size: 30),
+                const SizedBox(width: 10),
                 Text(
-                  'Add Medicine',
-                  style: TextStyle(
+                  l10n.addMedicine,
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 20,
                     fontWeight: FontWeight.w700,
@@ -753,6 +750,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       drawer: const AppNavigationDrawer(
         currentRoute: MyApp.routeHome,
       ),
+      floatingActionButton: const ChatbotFab(heroTag: 'chatbot_home'),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: _medicinesStream(),
         builder: (context, snapshot) {
@@ -787,6 +785,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               final pendingMedicines =
                   pendingSnapshot.data?.pendingMedicines ?? const <Medicine>[];
               final dueToday = pendingMedicines.length;
+              final l10n = AppLocalizations.of(context)!;
 
               return ListView(
                 padding: const EdgeInsets.fromLTRB(16, 18, 16, 30),
@@ -798,9 +797,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       Expanded(
                         child: _buildStatCard(
                           icon: Icons.calendar_month_outlined,
-                          title: 'Today',
+                          title: l10n.today,
                           value: '$dueToday',
-                          label: 'Pending',
+                          label: l10n.pending,
                         ),
                       ),
                     ],

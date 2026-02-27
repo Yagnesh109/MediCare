@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
 
@@ -11,6 +12,7 @@ import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:medicare_app/firebase_options.dart';
 import 'package:medicare_app/models/medicine.dart';
 import 'package:medicare_app/services/dose_tracking_service.dart';
+import 'package:medicare_app/services/voice_alert_service.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:timezone/data/latest_all.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
@@ -58,6 +60,7 @@ class NotificationService {
   bool _isInitialized = false;
   bool _localNotificationsReady = false;
   String _timezoneName = 'unknown';
+  final Map<int, Timer> _inAppVoiceTimers = <int, Timer>{};
 
   Future<void> init() async {
     if (_isInitialized) return;
@@ -105,6 +108,7 @@ class NotificationService {
       debugPrint('Local notifications initialize failed: $e');
       _localNotificationsReady = false;
     }
+    await VoiceAlertService.instance.init();
 
     final androidPlugin =
         _localNotifications.resolvePlatformSpecificImplementation<
@@ -262,6 +266,12 @@ class NotificationService {
             uiLocalNotificationDateInterpretation:
                 UILocalNotificationDateInterpretation.absoluteTime,
           );
+          _scheduleInAppVoiceReminder(
+            notificationId: notificationId,
+            scheduledDate: scheduledDate,
+            medicineName: medicineName,
+            scheduledTime: dose.time,
+          );
         }
       }
 
@@ -306,6 +316,12 @@ class NotificationService {
 
       if (medicineId.isEmpty || dateKey.isEmpty) {
         return;
+      }
+      if (actionId.isEmpty) {
+        await VoiceAlertService.instance.speakReminder(
+          medicineName: medicineName,
+          time: scheduledTime,
+        );
       }
 
       if (actionId == _actionTaken) {
@@ -453,6 +469,12 @@ class NotificationService {
       uiLocalNotificationDateInterpretation:
           UILocalNotificationDateInterpretation.absoluteTime,
     );
+    _scheduleInAppVoiceReminder(
+      notificationId: snoozeId == 0 ? 1 : snoozeId,
+      scheduledDate: snoozeAt,
+      medicineName: medicineName,
+      scheduledTime: scheduledTime,
+    );
     debugPrint(
       'Snoozed reminder medicine=$medicineId count=$nextSnoozeCount at=$snoozeAt',
     );
@@ -483,6 +505,27 @@ class NotificationService {
   int _safeNotificationId(int baseId, int index) {
     final candidate = (baseId * 100) + index;
     return candidate < 1 ? 1 : candidate;
+  }
+
+  void _scheduleInAppVoiceReminder({
+    required int notificationId,
+    required tz.TZDateTime scheduledDate,
+    required String medicineName,
+    required String scheduledTime,
+  }) {
+    _inAppVoiceTimers.remove(notificationId)?.cancel();
+    final now = tz.TZDateTime.now(tz.local);
+    final delay = scheduledDate.difference(now);
+    if (delay.isNegative || delay == Duration.zero) {
+      return;
+    }
+    _inAppVoiceTimers[notificationId] = Timer(delay, () async {
+      _inAppVoiceTimers.remove(notificationId);
+      await VoiceAlertService.instance.speakReminder(
+        medicineName: medicineName,
+        time: scheduledTime,
+      );
+    });
   }
 
   Future<void> showInstantNotification({
@@ -521,6 +564,7 @@ class NotificationService {
     final baseId = id.abs() % 20000000;
     for (int i = 0; i < days; i++) {
       final notificationId = _safeNotificationId(baseId, i);
+      _inAppVoiceTimers.remove(notificationId)?.cancel();
       await _localNotifications.cancel(notificationId);
     }
   }

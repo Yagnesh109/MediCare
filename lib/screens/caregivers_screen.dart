@@ -4,9 +4,11 @@ import 'package:android_intent_plus/android_intent.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:medicare_app/l10n/app_localizations.dart';
 import 'package:medicare_app/app.dart';
 import 'package:medicare_app/widgets/app_bar_pulse_indicator.dart';
 import 'package:medicare_app/widgets/app_navigation_drawer.dart';
+import 'package:medicare_app/widgets/chatbot_fab.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -102,7 +104,7 @@ class CaregiversScreen extends StatelessWidget {
       return;
     }
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Caregiver removed')),
+      SnackBar(content: Text(AppLocalizations.of(context)!.caregiverRemoved)),
     );
   }
 
@@ -143,6 +145,7 @@ class CaregiversScreen extends StatelessWidget {
   }
 
   Widget _buildAddCaregiverButton(BuildContext context, {required bool compact}) {
+    final l10n = AppLocalizations.of(context)!;
     return SizedBox(
       width: double.infinity,
       height: compact ? 72 : 76,
@@ -170,7 +173,7 @@ class CaregiversScreen extends StatelessWidget {
                     color: Color(0xFF1F3A70), size: 30),
                 const SizedBox(width: 10),
                 Text(
-                  'Add Caregiver',
+                  l10n.addCaregiver,
                   style: TextStyle(
                     color: const Color(0xFF1F3A70),
                     fontSize: compact ? 19 : 20,
@@ -187,14 +190,15 @@ class CaregiversScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final screenWidth = MediaQuery.of(context).size.width;
     final compact = screenWidth < 380;
     final user = FirebaseAuth.instance.currentUser;
     final patientId = user?.uid;
 
     if (patientId == null || patientId.isEmpty) {
-      return const Scaffold(
-        body: Center(child: Text('Please login again to manage caregivers.')),
+      return Scaffold(
+        body: Center(child: Text(l10n.pleaseLoginAgainRetry)),
       );
     }
 
@@ -208,14 +212,15 @@ class CaregiversScreen extends StatelessWidget {
             onPressed: () => Scaffold.of(context).openDrawer(),
           ),
         ),
-        title: const Padding(
-          padding: EdgeInsets.only(top: 4),
-          child: Text('Caregivers'),
+        title: Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Text(l10n.caregivers),
         ),
       ),
       drawer: const AppNavigationDrawer(
         currentRoute: MyApp.routeCaregivers,
       ),
+      floatingActionButton: const ChatbotFab(heroTag: 'chatbot_caregivers'),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: FirebaseFirestore.instance
             .collection('caregivers')
@@ -223,7 +228,7 @@ class CaregiversScreen extends StatelessWidget {
             .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.hasError) {
-            return const Center(child: Text('Unable to load caregivers'));
+            return Center(child: Text(l10n.caregivers));
           }
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
@@ -237,7 +242,7 @@ class CaregiversScreen extends StatelessWidget {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Text('No caregivers added yet'),
+                    Text(l10n.noCaregiversYet),
                     const SizedBox(height: 14),
                     _buildAddCaregiverButton(context, compact: compact),
                   ],
@@ -369,7 +374,7 @@ class CaregiversScreen extends StatelessWidget {
                               children: [
                                 _actionButton(
                                   icon: Icons.call,
-                                  label: 'Call',
+                                  label: l10n.call,
                                   highlight: true,
                                   onTap: () => _callCaregiver(context, phone),
                                 ),
@@ -380,7 +385,7 @@ class CaregiversScreen extends StatelessWidget {
                                 ),
                                 _actionButton(
                                   icon: Icons.edit_outlined,
-                                  label: 'Edit',
+                                  label: l10n.edit,
                                   onTap: () => _openCaregiverForm(
                                     context,
                                     caregiverDoc: doc,
@@ -393,7 +398,7 @@ class CaregiversScreen extends StatelessWidget {
                                 ),
                                 _actionButton(
                                   icon: Icons.delete_outline,
-                                  label: 'Delete',
+                                  label: l10n.delete,
                                   onTap: () => _deleteCaregiver(context, doc.id),
                                 ),
                               ],
@@ -471,7 +476,7 @@ class _CaregiverFormDialogState extends State<_CaregiverFormDialog> {
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please login again and retry.')),
+        SnackBar(content: Text(AppLocalizations.of(context)!.pleaseLoginAgainRetry)),
       );
       return;
     }
@@ -505,7 +510,9 @@ class _CaregiverFormDialogState extends State<_CaregiverFormDialog> {
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(doc == null ? 'Caregiver added' : 'Caregiver updated'),
+          content: Text(doc == null
+              ? AppLocalizations.of(context)!.caregiverAdded
+              : AppLocalizations.of(context)!.caregiverUpdated),
         ),
       );
     } catch (e) {
@@ -525,9 +532,10 @@ class _CaregiverFormDialogState extends State<_CaregiverFormDialog> {
   @override
   Widget build(BuildContext context) {
     final isEditing = widget.caregiverDoc != null;
+    final l10n = AppLocalizations.of(context)!;
 
     return AlertDialog(
-      title: Text(isEditing ? 'Edit Caregiver' : 'Add Caregiver'),
+      title: Text(isEditing ? l10n.edit : l10n.addCaregiver),
       content: Form(
         key: _formKey,
         child: SingleChildScrollView(
@@ -536,8 +544,8 @@ class _CaregiverFormDialogState extends State<_CaregiverFormDialog> {
             children: [
               TextFormField(
                 controller: _nameController,
-                decoration: const InputDecoration(
-                  labelText: 'Name',
+                decoration: InputDecoration(
+                  labelText: l10n.name,
                   prefixIcon: Icon(Icons.person_outline),
                 ),
                 validator: (value) {
@@ -551,8 +559,8 @@ class _CaregiverFormDialogState extends State<_CaregiverFormDialog> {
               TextFormField(
                 controller: _emailController,
                 keyboardType: TextInputType.emailAddress,
-                decoration: const InputDecoration(
-                  labelText: 'Email',
+                decoration: InputDecoration(
+                  labelText: l10n.email,
                   prefixIcon: Icon(Icons.email_outlined),
                 ),
                 validator: (value) {
@@ -566,8 +574,8 @@ class _CaregiverFormDialogState extends State<_CaregiverFormDialog> {
               TextFormField(
                 controller: _phoneController,
                 keyboardType: TextInputType.phone,
-                decoration: const InputDecoration(
-                  labelText: 'Phone',
+                decoration: InputDecoration(
+                  labelText: l10n.phone,
                   prefixIcon: Icon(Icons.phone_outlined),
                 ),
                 validator: (value) {
@@ -584,7 +592,7 @@ class _CaregiverFormDialogState extends State<_CaregiverFormDialog> {
       actions: [
         TextButton(
           onPressed: _isSaving ? null : () => Navigator.pop(context),
-          child: const Text('Cancel'),
+          child: Text(l10n.cancel),
         ),
         FilledButton(
           onPressed: _isSaving ? null : _save,
@@ -594,7 +602,7 @@ class _CaregiverFormDialogState extends State<_CaregiverFormDialog> {
                   height: 18,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Text('Save'),
+              : Text(l10n.save),
         ),
       ],
     );

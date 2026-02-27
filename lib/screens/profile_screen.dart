@@ -4,12 +4,14 @@ import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:medicare_app/l10n/app_localizations.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:medicare_app/app.dart';
 import 'package:medicare_app/models/patient_profile.dart';
 import 'package:medicare_app/widgets/app_bar_pulse_indicator.dart';
 import 'package:medicare_app/widgets/app_navigation_drawer.dart';
+import 'package:medicare_app/widgets/chatbot_fab.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -195,7 +197,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   String _formatDate(DateTime? date) {
-    if (date == null) return 'Not set';
+    final l10n = AppLocalizations.of(context)!;
+    if (date == null) return l10n.notSet;
     final dd = date.day.toString().padLeft(2, '0');
     final mm = date.month.toString().padLeft(2, '0');
     return '$dd/$mm/${date.year}';
@@ -245,7 +248,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (!mounted) return;
       setState(() => _isEditing = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Profile saved')),
+        SnackBar(content: Text(AppLocalizations.of(context)!.profileSaved)),
       );
     } catch (e) {
       if (!mounted) return;
@@ -261,6 +264,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final user = FirebaseAuth.instance.currentUser;
     final email = (user?.email ?? '').trim();
     final age = _calculateAge(_dob);
@@ -278,9 +282,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
             onPressed: () => Scaffold.of(context).openDrawer(),
           ),
         ),
-        title: const Padding(
-          padding: EdgeInsets.only(top: 4),
-          child: Text('Profile'),
+        title: Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Text(l10n.profile),
         ),
         actions: [
           if (!_isEditing)
@@ -310,6 +314,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       drawer: const AppNavigationDrawer(
         currentRoute: MyApp.routeProfile,
       ),
+      floatingActionButton: const ChatbotFab(heroTag: 'chatbot_profile'),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : ListView(
@@ -372,8 +377,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           TextFormField(
                             controller: _nameController,
                             enabled: _isEditing,
-                            decoration: const InputDecoration(
-                              labelText: 'Patient Name',
+                            decoration: InputDecoration(
+                              labelText: l10n.patientName,
                               prefixIcon: Icon(Icons.person_outline),
                             ),
                             validator: (value) {
@@ -387,16 +392,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           TextFormField(
                             initialValue: email,
                             enabled: false,
-                            decoration: const InputDecoration(
-                              labelText: 'Email',
+                            decoration: InputDecoration(
+                              labelText: l10n.email,
                               prefixIcon: Icon(Icons.email_outlined),
                             ),
                           ),
                           const SizedBox(height: 12),
                           DropdownButtonFormField<String>(
                             initialValue: _gender.isEmpty ? null : _gender,
-                            decoration: const InputDecoration(
-                              labelText: 'Gender',
+                            decoration: InputDecoration(
+                              labelText: l10n.gender,
                               prefixIcon: Icon(Icons.wc_outlined),
                             ),
                             items: const [
@@ -419,8 +424,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           TextFormField(
                             controller: _bloodGroupController,
                             enabled: _isEditing,
-                            decoration: const InputDecoration(
-                              labelText: 'Blood Group',
+                            decoration: InputDecoration(
+                              labelText: l10n.bloodGroup,
                               prefixIcon: Icon(Icons.bloodtype_outlined),
                             ),
                           ),
@@ -428,8 +433,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           InkWell(
                             onTap: _isEditing ? _pickDob : null,
                             child: InputDecorator(
-                              decoration: const InputDecoration(
-                                labelText: 'Date of Birth',
+                              decoration: InputDecoration(
+                                labelText: l10n.dateOfBirth,
                                 prefixIcon: Icon(Icons.cake_outlined),
                               ),
                               child: Text(_formatDate(_dob)),
@@ -437,8 +442,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ),
                           const SizedBox(height: 12),
                           InputDecorator(
-                            decoration: const InputDecoration(
-                              labelText: 'Age (calculated from DOB)',
+                            decoration: InputDecoration(
+                              labelText: l10n.ageCalculated,
                               prefixIcon: Icon(Icons.calendar_today_outlined),
                             ),
                             child: Text(age?.toString() ?? 'Not available'),
@@ -449,8 +454,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             enabled: _isEditing,
                             keyboardType: const TextInputType.numberWithOptions(
                                 decimal: true),
-                            decoration: const InputDecoration(
-                              labelText: 'Weight (kg)',
+                            decoration: InputDecoration(
+                              labelText: l10n.weightKg,
                               prefixIcon: Icon(Icons.monitor_weight_outlined),
                             ),
                             onChanged: (_) => setState(() {}),
@@ -461,8 +466,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             enabled: _isEditing,
                             keyboardType: const TextInputType.numberWithOptions(
                                 decimal: true),
-                            decoration: const InputDecoration(
-                              labelText: 'Height (cm)',
+                            decoration: InputDecoration(
+                              labelText: l10n.heightCm,
                               prefixIcon: Icon(Icons.height_outlined),
                             ),
                             onChanged: (_) => setState(() {}),
@@ -474,8 +479,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             minLines: 2,
                             maxLines: 4,
                             maxLength: 300,
-                            decoration: const InputDecoration(
-                              labelText: 'Allergies',
+                            decoration: InputDecoration(
+                              labelText: l10n.allergies,
                               alignLabelWithHint: true,
                               prefixIcon: Icon(Icons.warning_amber_outlined),
                               hintText: 'e.g. Penicillin, peanuts, dust',
@@ -492,7 +497,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             Padding(
                               padding: const EdgeInsets.only(top: 2),
                               child: Text(
-                                'Allergies: ${_allergiesController.text.trim().isEmpty ? 'Not set' : _allergiesController.text.trim()}',
+                                l10n.allergiesDisplay(
+                                  _allergiesController.text.trim().isEmpty
+                                      ? l10n.notSet
+                                      : _allergiesController.text.trim(),
+                                ),
                                 style: const TextStyle(
                                   color: Color(0xFF374151),
                                   fontWeight: FontWeight.w500,
@@ -517,7 +526,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  'BMI',
+                                  l10n.bmi,
                                   style: TextStyle(
                                     color: bmiColor,
                                     fontWeight: FontWeight.w800,
@@ -574,7 +583,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 FilledButton.icon(
                   onPressed: () => _logout(context),
                   icon: const Icon(Icons.logout),
-                  label: const Text('Logout'),
+                  label: Text(l10n.logout),
                 ),
               ],
             ),

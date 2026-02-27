@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:medicare_app/l10n/app_localizations.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:medicare_app/app.dart';
 
@@ -149,6 +150,7 @@ class AppNavigationDrawer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final drawerWidth = MediaQuery.of(context).size.width * 0.8;
     final avatarDiameter = drawerWidth * 0.2;
     final avatarRadius = avatarDiameter / 2;
@@ -169,36 +171,36 @@ class AppNavigationDrawer extends StatelessWidget {
           ListTile(
             selected: currentRoute == MyApp.routeHome,
             leading: const Icon(Icons.dashboard_outlined),
-            title: const Text('Dashboard'),
+            title: Text(l10n.dashboard),
             onTap: () => _navigate(context, MyApp.routeHome),
           ),
           ListTile(
             selected: currentRoute == MyApp.routeAdherence,
             leading: const Icon(Icons.bar_chart_outlined),
-            title: const Text('Adherence History'),
+            title: Text(l10n.adherenceHistory),
             onTap: () => _navigate(context, MyApp.routeAdherence),
           ),
           ListTile(
             selected: currentRoute == MyApp.routeCaregivers,
             leading: const Icon(Icons.people_alt_outlined),
-            title: const Text('Caregivers'),
+            title: Text(l10n.caregivers),
             onTap: () => _navigate(context, MyApp.routeCaregivers),
           ),
           ListTile(
             selected: currentRoute == MyApp.routeAddMedicine,
             leading: const Icon(Icons.add_circle_outline),
-            title: const Text('Add Medicine'),
+            title: Text(l10n.addMedicine),
             onTap: () => _navigate(context, MyApp.routeAddMedicine),
           ),
           ListTile(
-            selected: currentRoute == MyApp.routeSideEffects,
-            leading: const Icon(Icons.health_and_safety_outlined),
-            title: const Text('Side Effect Checker'),
-            onTap: () => _navigate(context, MyApp.routeSideEffects),
+            selected: currentRoute == MyApp.routeSettings,
+            leading: const Icon(Icons.settings_outlined),
+            title: const Text('Settings'),
+            onTap: () => _navigate(context, MyApp.routeSettings),
           ),
           ListTile(
             leading: const Icon(Icons.logout),
-            title: const Text('Logout'),
+            title: Text(l10n.logout),
             onTap: () {
               Navigator.pop(context);
               _logout(context);

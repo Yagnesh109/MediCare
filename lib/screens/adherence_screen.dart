@@ -1,9 +1,11 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:medicare_app/l10n/app_localizations.dart';
 import 'package:medicare_app/app.dart';
 import 'package:medicare_app/widgets/app_bar_pulse_indicator.dart';
 import 'package:medicare_app/widgets/app_navigation_drawer.dart';
+import 'package:medicare_app/widgets/chatbot_fab.dart';
 
 class AdherenceScreen extends StatefulWidget {
   const AdherenceScreen({super.key});
@@ -60,11 +62,12 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
   }
 
   String _statusLabel(String status) {
+    final l10n = AppLocalizations.of(context)!;
     switch (status) {
       case 'taken':
-        return 'Taken';
+        return l10n.taken;
       case 'missed':
-        return 'Missed';
+        return l10n.missed;
       default:
         return 'Unknown';
     }
@@ -88,22 +91,21 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
   }
 
   Future<void> _clearHistory(String uid) async {
+    final l10n = AppLocalizations.of(context)!;
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: const Text('Clear History'),
-          content: const Text(
-            'This will permanently delete all adherence history from app UI and Firebase database. Continue?',
-          ),
+          title: Text(l10n.clearHistory),
+          content: Text(l10n.clearHistoryConfirm),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
+              child: Text(l10n.cancel),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(context, true),
-              child: const Text('Delete All'),
+              child: Text(l10n.deleteAll),
             ),
           ],
         );
@@ -135,7 +137,7 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Adherence history cleared')),
+        SnackBar(content: Text(l10n.adherenceCleared)),
       );
     } catch (e) {
       if (!mounted) return;
@@ -163,6 +165,7 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
   }
 
   Widget _filterBar() {
+    final l10n = AppLocalizations.of(context)!;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
@@ -196,7 +199,7 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
                     Expanded(
                       child: Text(
                         _selectedDate == null
-                            ? 'All Dates'
+                            ? l10n.allDates
                             : _formatDate(_selectedDate!),
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
@@ -216,18 +219,18 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
           PopupMenuButton<String>(
             initialValue: _statusFilter,
             onSelected: (value) => setState(() => _statusFilter = value),
-            itemBuilder: (context) => const [
-              PopupMenuItem(value: 'all', child: Text('All')),
-              PopupMenuItem(value: 'taken', child: Text('Taken')),
-              PopupMenuItem(value: 'missed', child: Text('Missed')),
+            itemBuilder: (context) => [
+              PopupMenuItem(value: 'all', child: Text(l10n.all)),
+              PopupMenuItem(value: 'taken', child: Text(l10n.taken)),
+              PopupMenuItem(value: 'missed', child: Text(l10n.missed)),
             ],
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text(
-                    'Type:',
+                  Text(
+                    '${l10n.type}:',
                     style: TextStyle(
                       color: Color(0xFF4B5563),
                       fontSize: 16,
@@ -236,7 +239,7 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
                   const SizedBox(width: 6),
                   Text(
                     _statusFilter == 'all'
-                        ? 'All'
+                        ? l10n.all
                         : _statusFilter[0].toUpperCase() +
                             _statusFilter.substring(1),
                     style: const TextStyle(
@@ -335,6 +338,7 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
 
   Widget _doseHistoryCard(
       List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
+    final l10n = AppLocalizations.of(context)!;
     if (docs.isEmpty) {
       return Container(
         padding: const EdgeInsets.all(20),
@@ -342,7 +346,7 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
           color: Colors.white,
           borderRadius: BorderRadius.circular(20),
         ),
-        child: const Text('No dose logs for selected filters'),
+        child: Text(l10n.doseHistory),
       );
     }
 
@@ -459,9 +463,10 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
   @override
   Widget build(BuildContext context) {
     final uid = FirebaseAuth.instance.currentUser?.uid;
+    final l10n = AppLocalizations.of(context)!;
     if (uid == null || uid.isEmpty) {
-      return const Scaffold(
-        body: Center(child: Text('Please login again.')),
+      return Scaffold(
+        body: Center(child: Text(l10n.pleaseLoginAgain)),
       );
     }
 
@@ -475,14 +480,15 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
             onPressed: () => Scaffold.of(context).openDrawer(),
           ),
         ),
-        title: const Padding(
-          padding: EdgeInsets.only(top: 4),
-          child: Text('Adherence History'),
+        title: Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Text(l10n.adherenceHistory),
         ),
       ),
       drawer: const AppNavigationDrawer(
         currentRoute: MyApp.routeAdherence,
       ),
+      floatingActionButton: const ChatbotFab(heroTag: 'chatbot_adherence'),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: FirebaseFirestore.instance
             .collection('dose_logs')
@@ -490,7 +496,7 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
             .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.hasError) {
-            return const Center(child: Text('Unable to load adherence logs'));
+            return Center(child: Text(l10n.adherenceHistory));
           }
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
@@ -532,7 +538,7 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
                     child: _metricCard(
                       icon: Icons.check_circle,
                       iconColor: const Color(0xFF10B981),
-                      label: 'Taken',
+                      label: l10n.taken,
                       value: '$takenCount',
                     ),
                   ),
@@ -545,7 +551,7 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
                     child: _metricCard(
                       icon: Icons.cancel,
                       iconColor: const Color(0xFFEF4444),
-                      label: 'Missed',
+                      label: l10n.missed,
                       value: '$missedCount',
                     ),
                   ),
@@ -553,7 +559,7 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
               ),
               const SizedBox(height: 16),
               _sectionTitle(
-                'Dose History',
+                l10n.doseHistory,
                 trailing: TextButton.icon(
                   onPressed: _isClearing ? null : () => _clearHistory(uid),
                   icon: _isClearing
@@ -563,7 +569,7 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : const Icon(Icons.delete_sweep_outlined),
-                  label: const Text('Clear All History'),
+                  label: Text(l10n.clearAllHistory),
                 ),
               ),
               const SizedBox(height: 10),
