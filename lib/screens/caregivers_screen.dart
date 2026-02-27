@@ -142,6 +142,49 @@ class CaregiversScreen extends StatelessWidget {
     );
   }
 
+  Widget _buildAddCaregiverButton(BuildContext context, {required bool compact}) {
+    return SizedBox(
+      width: double.infinity,
+      height: compact ? 72 : 76,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: const Color(0xFFDCE9FF),
+          borderRadius: BorderRadius.circular(22),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x332E84F3),
+              blurRadius: 16,
+              offset: Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(22),
+            onTap: () => _openCaregiverForm(context),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.person_add_alt_1,
+                    color: Color(0xFF1F3A70), size: 30),
+                const SizedBox(width: 10),
+                Text(
+                  'Add Caregiver',
+                  style: TextStyle(
+                    color: const Color(0xFF1F3A70),
+                    fontSize: compact ? 19 : 20,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
@@ -173,46 +216,6 @@ class CaregiversScreen extends StatelessWidget {
       drawer: const AppNavigationDrawer(
         currentRoute: MyApp.routeCaregivers,
       ),
-      floatingActionButton: SizedBox(
-        width: compact ? 152 : 188,
-        height: compact ? 80 : 96,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: const Color(0xFFDCE9FF),
-            borderRadius: BorderRadius.circular(32),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x332E84F3),
-                blurRadius: 16,
-                offset: Offset(0, 8),
-              ),
-            ],
-          ),
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              borderRadius: BorderRadius.circular(32),
-              onTap: () => _openCaregiverForm(context),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.person_add_alt_1,
-                      color: Color(0xFF1F3A70), size: 34),
-                  const SizedBox(width: 12),
-                  Text(
-                    'Add',
-                    style: TextStyle(
-                      color: const Color(0xFF1F3A70),
-                      fontSize: compact ? 20 : 24,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: FirebaseFirestore.instance
             .collection('caregivers')
@@ -228,160 +231,184 @@ class CaregiversScreen extends StatelessWidget {
 
           final docs = snapshot.data?.docs ?? [];
           if (docs.isEmpty) {
-            return const Center(
-              child: Text('No caregivers added yet'),
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('No caregivers added yet'),
+                    const SizedBox(height: 14),
+                    _buildAddCaregiverButton(context, compact: compact),
+                  ],
+                ),
+              ),
             );
           }
 
-          return ListView.separated(
+          return ListView(
             padding: const EdgeInsets.all(16),
-            itemCount: docs.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 14),
-            itemBuilder: (context, index) {
-              final doc = docs[index];
-              final data = doc.data();
-              final name = (data['name'] ?? '').toString();
-              final email = (data['email'] ?? '').toString();
-              final phone = (data['phone'] ?? '').toString();
-              final photoUrl = _resolveCaregiverPhotoUrl(data, email);
-              final initials = _initialsFromName(name, email);
+            children: [
+              for (int index = 0; index < docs.length; index++) ...[
+                Builder(
+                  builder: (context) {
+                    final doc = docs[index];
+                    final data = doc.data();
+                    final name = (data['name'] ?? '').toString();
+                    final email = (data['email'] ?? '').toString();
+                    final phone = (data['phone'] ?? '').toString();
+                    final photoUrl = _resolveCaregiverPhotoUrl(data, email);
+                    final initials = _initialsFromName(name, email);
 
-              return Container(
-                padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF7F9FF),
-                  borderRadius: BorderRadius.circular(26),
-                  border: Border.all(color: const Color(0xFFDCE5F2)),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0x180F172A),
-                      blurRadius: 16,
-                      offset: Offset(0, 8),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          width: 92,
-                          height: 92,
-                          decoration: const BoxDecoration(
-                            shape: BoxShape.circle,
-                            gradient: LinearGradient(
-                              colors: [Color(0xFF2E84F3), Color(0xFF2D5FB8)],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                          ),
-                          child: ClipOval(
-                            child: photoUrl.isEmpty
-                                ? Center(
-                                    child: Text(
-                                      initials,
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 40,
-                                        fontWeight: FontWeight.w400,
-                                      ),
-                                    ),
-                                  )
-                                : Image.network(
-                                    photoUrl,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (context, _, __) => Center(
-                                      child: Text(
-                                        initials,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 40,
-                                          fontWeight: FontWeight.w400,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                name.isEmpty ? 'Unnamed caregiver' : name,
-                                style: const TextStyle(
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.w500,
-                                  color: Color(0xFF0F172A),
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              if (email.isNotEmpty)
-                                Text(
-                                  email,
-                                  style: const TextStyle(
-                                    fontSize: 17,
-                                    color: Color(0xFF1F2937),
-                                  ),
-                                ),
-                              if (phone.isNotEmpty)
-                                Text(
-                                  phone,
-                                  style: const TextStyle(
-                                    fontSize: 17,
-                                    color: Color(0xFF1F2937),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 14),
-                    Container(
+                    return Container(
+                      padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
                       decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: const Color(0xFFDDE5F3)),
-                      ),
-                      child: Row(
-                        children: [
-                          _actionButton(
-                            icon: Icons.call,
-                            label: 'Call',
-                            highlight: true,
-                            onTap: () => _callCaregiver(context, phone),
-                          ),
-                          const SizedBox(
-                            height: 42,
-                            child: VerticalDivider(color: Color(0xFFD8E0EE)),
-                          ),
-                          _actionButton(
-                            icon: Icons.edit_outlined,
-                            label: 'Edit',
-                            onTap: () => _openCaregiverForm(
-                              context,
-                              caregiverDoc: doc,
-                            ),
-                          ),
-                          const SizedBox(
-                            height: 42,
-                            child: VerticalDivider(color: Color(0xFFD8E0EE)),
-                          ),
-                          _actionButton(
-                            icon: Icons.delete_outline,
-                            label: 'Delete',
-                            onTap: () => _deleteCaregiver(context, doc.id),
+                        color: const Color(0xFFF7F9FF),
+                        borderRadius: BorderRadius.circular(26),
+                        border: Border.all(color: const Color(0xFFDCE5F2)),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0x180F172A),
+                            blurRadius: 16,
+                            offset: Offset(0, 8),
                           ),
                         ],
                       ),
-                    ),
-                  ],
+                      child: Column(
+                        children: [
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Container(
+                                width: 92,
+                                height: 92,
+                                decoration: const BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  gradient: LinearGradient(
+                                    colors: [
+                                      Color(0xFF2E84F3),
+                                      Color(0xFF2D5FB8)
+                                    ],
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                  ),
+                                ),
+                                child: ClipOval(
+                                  child: photoUrl.isEmpty
+                                      ? Center(
+                                          child: Text(
+                                            initials,
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 40,
+                                              fontWeight: FontWeight.w400,
+                                            ),
+                                          ),
+                                        )
+                                      : Image.network(
+                                          photoUrl,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (context, _, __) =>
+                                              Center(
+                                            child: Text(
+                                              initials,
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 40,
+                                                fontWeight: FontWeight.w400,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      name.isEmpty ? 'Unnamed caregiver' : name,
+                                      style: const TextStyle(
+                                        fontSize: 22,
+                                        fontWeight: FontWeight.w500,
+                                        color: Color(0xFF0F172A),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    if (email.isNotEmpty)
+                                      Text(
+                                        email,
+                                        style: const TextStyle(
+                                          fontSize: 17,
+                                          color: Color(0xFF1F2937),
+                                        ),
+                                      ),
+                                    if (phone.isNotEmpty)
+                                      Text(
+                                        phone,
+                                        style: const TextStyle(
+                                          fontSize: 17,
+                                          color: Color(0xFF1F2937),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 14),
+                          Container(
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(20),
+                              border:
+                                  Border.all(color: const Color(0xFFDDE5F3)),
+                            ),
+                            child: Row(
+                              children: [
+                                _actionButton(
+                                  icon: Icons.call,
+                                  label: 'Call',
+                                  highlight: true,
+                                  onTap: () => _callCaregiver(context, phone),
+                                ),
+                                const SizedBox(
+                                  height: 42,
+                                  child: VerticalDivider(
+                                      color: Color(0xFFD8E0EE)),
+                                ),
+                                _actionButton(
+                                  icon: Icons.edit_outlined,
+                                  label: 'Edit',
+                                  onTap: () => _openCaregiverForm(
+                                    context,
+                                    caregiverDoc: doc,
+                                  ),
+                                ),
+                                const SizedBox(
+                                  height: 42,
+                                  child: VerticalDivider(
+                                      color: Color(0xFFD8E0EE)),
+                                ),
+                                _actionButton(
+                                  icon: Icons.delete_outline,
+                                  label: 'Delete',
+                                  onTap: () => _deleteCaregiver(context, doc.id),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
                 ),
-              );
-            },
+                const SizedBox(height: 14),
+              ],
+              _buildAddCaregiverButton(context, compact: compact),
+              const SizedBox(height: 8),
+            ],
           );
         },
       ),

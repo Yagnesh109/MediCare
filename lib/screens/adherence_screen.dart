@@ -15,6 +15,7 @@ class AdherenceScreen extends StatefulWidget {
 class _AdherenceScreenState extends State<AdherenceScreen> {
   DateTime? _selectedDate;
   String _statusFilter = 'all';
+  bool _isClearing = false;
 
   Color _statusColor(String status) {
     switch (status) {
@@ -23,7 +24,7 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
       case 'missed':
         return const Color(0xFFEF4444);
       default:
-        return const Color(0xFFD18A1B);
+        return const Color(0xFF6B7280);
     }
   }
 
@@ -34,48 +35,8 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
       case 'missed':
         return Icons.cancel;
       default:
-        return Icons.hourglass_bottom;
+        return Icons.help_outline;
     }
-  }
-
-  int _streakDays(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
-    final Map<String, String> dayStatus = {};
-    for (final doc in docs) {
-      final data = doc.data();
-      final day = (data['dateKey'] ?? '').toString();
-      final status = (data['status'] ?? '').toString();
-      if (day.isEmpty) continue;
-      final current = dayStatus[day];
-      if (current == 'missed') continue;
-      if (status == 'missed') {
-        dayStatus[day] = 'missed';
-      } else if (status == 'taken') {
-        dayStatus[day] = 'taken';
-      } else {
-        dayStatus.putIfAbsent(day, () => status);
-      }
-    }
-
-    final keys = dayStatus.keys.toList()..sort((a, b) => b.compareTo(a));
-    int streak = 0;
-    DateTime? expected;
-    for (final key in keys) {
-      final day = DateTime.tryParse(key);
-      if (day == null) continue;
-      final normalized = DateTime(day.year, day.month, day.day);
-      if (expected == null) {
-        final today = DateTime.now();
-        final todayNorm = DateTime(today.year, today.month, today.day);
-        final yesterday = todayNorm.subtract(const Duration(days: 1));
-        if (normalized != todayNorm && normalized != yesterday) break;
-        expected = normalized;
-      }
-      if (normalized != expected) break;
-      if (dayStatus[key] != 'taken') break;
-      streak += 1;
-      expected = expected.subtract(const Duration(days: 1));
-    }
-    return streak;
   }
 
   String _dateKey(DateTime date) {
@@ -90,6 +51,14 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
     return '$dd/$mm/${date.year}';
   }
 
+  String _formatDateKey(String dateKey) {
+    final parsed = DateTime.tryParse(dateKey);
+    if (parsed == null) {
+      return dateKey.isEmpty ? '-' : dateKey;
+    }
+    return _formatDate(parsed);
+  }
+
   String _statusLabel(String status) {
     switch (status) {
       case 'taken':
@@ -97,7 +66,7 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
       case 'missed':
         return 'Missed';
       default:
-        return 'Pending';
+        return 'Unknown';
     }
   }
 
@@ -116,6 +85,68 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
       }
       return true;
     }).toList();
+  }
+
+  Future<void> _clearHistory(String uid) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Clear History'),
+          content: const Text(
+            'This will permanently delete all adherence history from app UI and Firebase database. Continue?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Delete All'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirm != true || !mounted) {
+      return;
+    }
+
+    setState(() => _isClearing = true);
+    try {
+      final collection = FirebaseFirestore.instance.collection('dose_logs');
+      while (true) {
+        final snapshot = await collection
+            .where('patientId', isEqualTo: uid)
+            .limit(300)
+            .get();
+        if (snapshot.docs.isEmpty) {
+          break;
+        }
+
+        final batch = FirebaseFirestore.instance.batch();
+        for (final doc in snapshot.docs) {
+          batch.delete(doc.reference);
+        }
+        await batch.commit();
+      }
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Adherence history cleared')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to clear history: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isClearing = false);
+      }
+    }
   }
 
   Future<void> _pickDate() async {
@@ -189,7 +220,6 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
               PopupMenuItem(value: 'all', child: Text('All')),
               PopupMenuItem(value: 'taken', child: Text('Taken')),
               PopupMenuItem(value: 'missed', child: Text('Missed')),
-              PopupMenuItem(value: 'pending', child: Text('Pending')),
             ],
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -277,82 +307,7 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
     );
   }
 
-  Widget _adherenceSummaryCard({
-    required int takenCount,
-    required int totalCount,
-  }) {
-    final percent =
-        totalCount == 0 ? 0 : ((takenCount / totalCount) * 100).round();
-    final progress = totalCount == 0 ? 0.0 : takenCount / totalCount;
-
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x110F172A),
-            blurRadius: 12,
-            offset: Offset(0, 6),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 106,
-            height: 106,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                CircularProgressIndicator(
-                  value: progress,
-                  strokeWidth: 12,
-                  backgroundColor: const Color(0xFFD8E8F9),
-                  color: const Color(0xFF64A7EE),
-                ),
-                Text(
-                  '$percent%',
-                  style: const TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF0F172A),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '$percent% Adherence',
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF111827),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Start your streak today',
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: Color(0xFF4B5563),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _sectionTitle(String title) {
+  Widget _sectionTitle(String title, {Widget? trailing}) {
     return Row(
       children: [
         Text(
@@ -370,6 +325,10 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
             thickness: 2,
           ),
         ),
+        if (trailing != null) ...[
+          const SizedBox(width: 10),
+          trailing,
+        ],
       ],
     );
   }
@@ -415,6 +374,7 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
     final data = doc.data();
     final name = (data['medicineName'] ?? '').toString();
     final time = (data['scheduledTime'] ?? '').toString();
+    final dateKey = (data['dateKey'] ?? '').toString();
     final status = (data['status'] ?? 'pending').toString();
     final color = _statusColor(status);
 
@@ -456,6 +416,17 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
                     const SizedBox(width: 5),
                     Text(
                       time.isEmpty ? '--:--' : time,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        color: Color(0xFF6B7280),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Icon(Icons.calendar_today_outlined,
+                        size: 16, color: Color(0xFF6B7280)),
+                    const SizedBox(width: 5),
+                    Text(
+                      _formatDateKey(dateKey),
                       style: const TextStyle(
                         fontSize: 15,
                         color: Color(0xFF6B7280),
@@ -539,19 +510,17 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
             return bt.compareTo(at);
           });
 
-          final filteredDocs = _applyFilters(docs);
+          final historyDocs = docs.where((doc) {
+            final status = (doc.data()['status'] ?? '').toString();
+            return status == 'taken' || status == 'missed';
+          }).toList();
+          final filteredDocs = _applyFilters(historyDocs);
           final takenCount = filteredDocs
               .where((d) => (d.data()['status'] ?? '').toString() == 'taken')
               .length;
           final missedCount = filteredDocs
               .where((d) => (d.data()['status'] ?? '').toString() == 'missed')
               .length;
-          final pendingCount = filteredDocs
-              .where((d) =>
-                  (d.data()['status'] ?? 'pending').toString() == 'pending')
-              .length;
-          final streak = _streakDays(filteredDocs);
-
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
@@ -559,15 +528,6 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
               const SizedBox(height: 14),
               Row(
                 children: [
-                  Expanded(
-                    child: _metricCard(
-                      icon: Icons.local_fire_department,
-                      iconColor: const Color(0xFFF59E0B),
-                      label: 'Streak',
-                      value: '$streak days',
-                    ),
-                  ),
-                  const SizedBox(width: 12),
                   Expanded(
                     child: _metricCard(
                       icon: Icons.check_circle,
@@ -589,24 +549,23 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
                       value: '$missedCount',
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _metricCard(
-                      icon: Icons.hourglass_bottom,
-                      iconColor: const Color(0xFFD18A1B),
-                      label: 'Pending',
-                      value: '$pendingCount',
-                    ),
-                  ),
                 ],
               ),
-              const SizedBox(height: 14),
-              _adherenceSummaryCard(
-                takenCount: takenCount,
-                totalCount: takenCount + missedCount + pendingCount,
-              ),
               const SizedBox(height: 16),
-              _sectionTitle('Dose History'),
+              _sectionTitle(
+                'Dose History',
+                trailing: TextButton.icon(
+                  onPressed: _isClearing ? null : () => _clearHistory(uid),
+                  icon: _isClearing
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.delete_sweep_outlined),
+                  label: const Text('Clear All History'),
+                ),
+              ),
               const SizedBox(height: 10),
               _doseHistoryCard(filteredDocs),
               const SizedBox(height: 20),

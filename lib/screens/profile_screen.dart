@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:medicare_app/app.dart';
+import 'package:medicare_app/models/patient_profile.dart';
 import 'package:medicare_app/widgets/app_bar_pulse_indicator.dart';
 import 'package:medicare_app/widgets/app_navigation_drawer.dart';
 
@@ -23,6 +24,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final _bloodGroupController = TextEditingController();
   final _weightController = TextEditingController();
   final _heightController = TextEditingController();
+  final _allergiesController = TextEditingController();
 
   final ImagePicker _imagePicker = ImagePicker();
 
@@ -45,6 +47,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _bloodGroupController.dispose();
     _weightController.dispose();
     _heightController.dispose();
+    _allergiesController.dispose();
     super.dispose();
   }
 
@@ -154,16 +157,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final doc =
         await FirebaseFirestore.instance.collection('patients').doc(uid).get();
     final data = doc.data() ?? <String, dynamic>{};
+    final profile = PatientProfile.fromMap(data);
     final user = FirebaseAuth.instance.currentUser;
 
-    _nameController.text = (data['name'] ?? user?.displayName ?? '').toString();
-    _bloodGroupController.text = (data['bloodGroup'] ?? '').toString();
-    _weightController.text = (data['weightKg'] ?? '').toString();
-    _heightController.text = (data['heightCm'] ?? '').toString();
-    _gender = (data['gender'] ?? '').toString();
-    _profileImageBase64 = (data['profileImageBase64'] ?? '').toString();
+    _nameController.text = profile.name.isEmpty
+        ? (user?.displayName ?? '').toString()
+        : profile.name;
+    _bloodGroupController.text = profile.bloodGroup;
+    _weightController.text = profile.weightKg;
+    _heightController.text = profile.heightCm;
+    _allergiesController.text = profile.allergies;
+    _gender = profile.gender;
+    _profileImageBase64 = profile.profileImageBase64;
 
-    final rawDob = (data['dateOfBirth'] ?? '').toString();
+    final rawDob = profile.dateOfBirth;
     if (rawDob.isNotEmpty) {
       _dob = DateTime.tryParse(rawDob);
     }
@@ -198,22 +205,36 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (!_formKey.currentState!.validate()) return;
     final uid = _uid;
     if (uid == null || uid.isEmpty) return;
+    final allergies = _allergiesController.text.trim();
+    if (allergies.length > 300) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Allergies must be 300 characters or less')),
+      );
+      return;
+    }
 
     setState(() => _saving = true);
     try {
-      await FirebaseFirestore.instance.collection('patients').doc(uid).set({
-        'name': _nameController.text.trim(),
-        'bloodGroup': _bloodGroupController.text.trim(),
-        'gender': _gender,
-        'dateOfBirth': _dob == null
+      final profile = PatientProfile(
+        name: _nameController.text.trim(),
+        bloodGroup: _bloodGroupController.text.trim(),
+        gender: _gender,
+        dateOfBirth: _dob == null
             ? ''
             : '${_dob!.year}-${_dob!.month.toString().padLeft(2, '0')}-${_dob!.day.toString().padLeft(2, '0')}',
-        'age': _calculateAge(_dob),
-        'weightKg': _weightController.text.trim(),
-        'heightCm': _heightController.text.trim(),
-        'profileImageBase64': _profileImageBase64,
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+        age: _calculateAge(_dob),
+        weightKg: _weightController.text.trim(),
+        heightCm: _heightController.text.trim(),
+        profileImageBase64: _profileImageBase64,
+        allergies: allergies,
+      );
+      await FirebaseFirestore.instance.collection('patients').doc(uid).set(
+            {
+              ...profile.toMap(),
+              'updatedAt': FieldValue.serverTimestamp(),
+            },
+            SetOptions(merge: true),
+          );
 
       final user = FirebaseAuth.instance.currentUser;
       final name = _nameController.text.trim();
@@ -446,6 +467,38 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             ),
                             onChanged: (_) => setState(() {}),
                           ),
+                          const SizedBox(height: 12),
+                          TextFormField(
+                            controller: _allergiesController,
+                            enabled: _isEditing,
+                            minLines: 2,
+                            maxLines: 4,
+                            maxLength: 300,
+                            decoration: const InputDecoration(
+                              labelText: 'Allergies',
+                              alignLabelWithHint: true,
+                              prefixIcon: Icon(Icons.warning_amber_outlined),
+                              hintText: 'e.g. Penicillin, peanuts, dust',
+                            ),
+                            validator: (value) {
+                              final trimmed = (value ?? '').trim();
+                              if (trimmed.length > 300) {
+                                return 'Allergies must be 300 characters or less';
+                              }
+                              return null;
+                            },
+                          ),
+                          if (!_isEditing)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 2),
+                              child: Text(
+                                'Allergies: ${_allergiesController.text.trim().isEmpty ? 'Not set' : _allergiesController.text.trim()}',
+                                style: const TextStyle(
+                                  color: Color(0xFF374151),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
                           const SizedBox(height: 16),
                           Container(
                             padding: const EdgeInsets.all(14),

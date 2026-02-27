@@ -295,6 +295,74 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     return !day.isBefore(startDay) && !day.isAfter(endDay);
   }
 
+  Future<_PendingTodayData> _loadPendingTodayData(
+    List<Medicine> medicines,
+  ) async {
+    final now = DateTime.now();
+    final todayMedicines = medicines
+        .where((medicine) => _isCourseActiveToday(medicine, now))
+        .toList();
+    if (todayMedicines.isEmpty) {
+      return const _PendingTodayData(pendingMedicines: <Medicine>[]);
+    }
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null || uid.isEmpty) {
+      return const _PendingTodayData(pendingMedicines: <Medicine>[]);
+    }
+
+    final todayKey = _dateKey(now);
+    final todayLogs = await FirebaseFirestore.instance
+        .collection('dose_logs')
+        .where('patientId', isEqualTo: uid)
+        .where('dateKey', isEqualTo: todayKey)
+        .get();
+
+    final statusByMedicineDose = <String, Map<String, String>>{};
+    for (final doc in todayLogs.docs) {
+      final data = doc.data();
+      final medicineId = (data['medicineId'] ?? '').toString();
+      final doseKey = (data['doseKey'] ?? '').toString();
+      final status = (data['status'] ?? '').toString();
+      if (medicineId.isEmpty || doseKey.isEmpty) {
+        continue;
+      }
+      final map = statusByMedicineDose.putIfAbsent(medicineId, () => {});
+      map[doseKey] = status;
+    }
+
+    final pendingMedicines = <Medicine>[];
+    for (final medicine in todayMedicines) {
+      final medicineId = medicine.id;
+      final doses = medicine.doses.isNotEmpty
+          ? medicine.doses
+          : (medicine.time.trim().isEmpty
+              ? const <DoseSchedule>[]
+              : <DoseSchedule>[
+                  DoseSchedule(time: medicine.time, mealRelation: 'anytime'),
+                ]);
+      if (medicineId == null || medicineId.isEmpty || doses.isEmpty) {
+        pendingMedicines.add(medicine);
+        continue;
+      }
+
+      final byDose = statusByMedicineDose[medicineId] ?? const {};
+      final hasPendingDose = doses.any((dose) {
+        final status = byDose[dose.doseKey] ?? 'pending';
+        return status != 'taken' && status != 'missed';
+      });
+      if (hasPendingDose) {
+        pendingMedicines.add(medicine);
+      }
+    }
+    return _PendingTodayData(pendingMedicines: pendingMedicines);
+  }
+
+  String _dateKey(DateTime date) {
+    final mm = date.month.toString().padLeft(2, '0');
+    final dd = date.day.toString().padLeft(2, '0');
+    return '${date.year}-$mm-$dd';
+  }
+
   Widget _buildSloganCard() {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -475,6 +543,98 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
+  Widget _buildNoPendingTodayCard() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 26, 20, 26),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x110F172A),
+            blurRadius: 16,
+            offset: Offset(0, 8),
+          ),
+        ],
+      ),
+      child: const Column(
+        children: [
+          Icon(
+            Icons.task_alt_outlined,
+            size: 92,
+            color: Color(0xFFBCD8F6),
+          ),
+          SizedBox(height: 12),
+          Text(
+            'No pending medicines for today',
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF111827),
+            ),
+            textAlign: TextAlign.center,
+          ),
+          SizedBox(height: 10),
+          Text(
+            'Taken and missed medicines are available in Adherence History.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 16,
+              color: Color(0xFF4B5563),
+              height: 1.4,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAddMedicineButton() {
+    return SizedBox(
+      width: double.infinity,
+      height: 76,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Color(0xFF2E84F3), Color(0xFF65B8FF)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(22),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x332E84F3),
+              blurRadius: 20,
+              offset: Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(22),
+            onTap: () => _openAddMedicine(context),
+            child: const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.add_circle_outline, color: Colors.white, size: 30),
+                SizedBox(width: 10),
+                Text(
+                  'Add Medicine',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildMedicineCard(Medicine medicine) {
     final now = DateTime.now();
     final name = medicine.name;
@@ -593,35 +753,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       drawer: const AppNavigationDrawer(
         currentRoute: MyApp.routeHome,
       ),
-      floatingActionButton: SizedBox(
-        width: 86,
-        height: 86,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFF2E84F3), Color(0xFF65B8FF)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(28),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x332E84F3),
-                blurRadius: 20,
-                offset: Offset(0, 8),
-              ),
-            ],
-          ),
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              borderRadius: BorderRadius.circular(28),
-              onTap: () => _openAddMedicine(context),
-              child: const Icon(Icons.add, color: Colors.white, size: 44),
-            ),
-          ),
-        ),
-      ),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: _medicinesStream(),
         builder: (context, snapshot) {
@@ -639,12 +770,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           final medicines = docs
               .map((doc) => Medicine.fromMap(doc.data(), id: doc.id))
               .toList();
-          final now = DateTime.now();
-          final dueToday = medicines
-              .where((medicine) => _isCourseActiveToday(medicine, now))
-              .length;
-          final activeCount = medicines.length;
-
           if (medicines.isNotEmpty) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
               _runMissedCheckIfNeeded(medicines);
@@ -652,63 +777,70 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             });
           }
 
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(16, 18, 16, 150),
-            children: [
-              _buildSloganCard(),
-              const SizedBox(height: 14),
-              Row(
+          return FutureBuilder<_PendingTodayData>(
+            future: _loadPendingTodayData(medicines),
+            builder: (context, pendingSnapshot) {
+              if (pendingSnapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+
+              final pendingMedicines =
+                  pendingSnapshot.data?.pendingMedicines ?? const <Medicine>[];
+              final dueToday = pendingMedicines.length;
+
+              return ListView(
+                padding: const EdgeInsets.fromLTRB(16, 18, 16, 30),
                 children: [
-                  Expanded(
-                    child: _buildStatCard(
-                      icon: Icons.calendar_month_outlined,
-                      title: 'Today',
-                      value: '$dueToday',
-                      label: 'Due',
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _buildStatCard(
-                      icon: Icons.medication_outlined,
-                      title: 'Total Medicines',
-                      value: '$activeCount',
-                      label: 'Active',
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 22),
-              _buildSectionTitle(),
-              const SizedBox(height: 12),
-              if (medicines.isEmpty) ...[
-                _buildEmptyScheduleCard(),
-                const SizedBox(height: 30),
-                const Center(
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 20),
-                    child: Text(
-                      '',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 17,
-                        color: Color(0xFF374151),
-                        height: 1.5,
+                  _buildSloganCard(),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildStatCard(
+                          icon: Icons.calendar_month_outlined,
+                          title: 'Today',
+                          value: '$dueToday',
+                          label: 'Pending',
+                        ),
                       ),
-                    ),
+                    ],
                   ),
-                ),
-              ] else
-                ...medicines.map((medicine) {
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: _buildMedicineCard(medicine),
-                  );
-                }),
-            ],
+                  const SizedBox(height: 22),
+                  _buildSectionTitle(),
+                  const SizedBox(height: 12),
+                  if (pendingMedicines.isEmpty) ...[
+                    if (medicines.isEmpty)
+                      _buildEmptyScheduleCard()
+                    else
+                      _buildNoPendingTodayCard(),
+                    const SizedBox(height: 14),
+                    _buildAddMedicineButton(),
+                    const SizedBox(height: 10),
+                  ] else
+                    ...pendingMedicines.map((medicine) {
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: _buildMedicineCard(medicine),
+                      );
+                    }),
+                  if (pendingMedicines.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    _buildAddMedicineButton(),
+                  ],
+                ],
+              );
+            },
           );
         },
       ),
     );
   }
+}
+
+class _PendingTodayData {
+  const _PendingTodayData({
+    required this.pendingMedicines,
+  });
+
+  final List<Medicine> pendingMedicines;
 }
