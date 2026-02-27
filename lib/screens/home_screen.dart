@@ -6,6 +6,8 @@ import 'package:medicare_app/app.dart';
 import 'package:medicare_app/models/medicine.dart';
 import 'package:medicare_app/services/dose_tracking_service.dart';
 import 'package:medicare_app/services/notification_service.dart';
+import 'package:medicare_app/services/phi_e2ee_service.dart';
+import 'package:medicare_app/services/stock_service.dart';
 import 'package:medicare_app/widgets/app_bar_pulse_indicator.dart';
 import 'package:medicare_app/widgets/app_navigation_drawer.dart';
 import 'package:medicare_app/widgets/chatbot_fab.dart';
@@ -246,10 +248,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Future<void> _markTaken(Medicine medicine) async {
     await _doseTrackingService.markDoseTaken(medicine);
+    final stockResult =
+        await StockService.instance.consumeOneByMedicine(medicine.name);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('${medicine.name} marked as taken')),
     );
+    if (stockResult.lowStockAlert) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(stockResult.message)),
+      );
+      await NotificationService.instance.showInstantNotification(
+        id: medicine.name.hashCode ^ 787878,
+        title: 'Low Stock Alert',
+        body: stockResult.message,
+      );
+    }
     setState(() {});
   }
 
@@ -312,16 +326,20 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       return const _PendingTodayData(pendingMedicines: <Medicine>[]);
     }
 
-    final todayKey = _dateKey(now);
     final todayLogs = await FirebaseFirestore.instance
         .collection('dose_logs')
         .where('patientId', isEqualTo: uid)
-        .where('dateKey', isEqualTo: todayKey)
         .get();
 
     final statusByMedicineDose = <String, Map<String, String>>{};
     for (final doc in todayLogs.docs) {
-      final data = doc.data();
+      final data = await PhiE2eeService.instance.decryptPhiMap(
+        stored: doc.data(),
+        domain: 'dose_log',
+      );
+      if ((data['dateKey'] ?? '').toString() != _dateKey(now)) {
+        continue;
+      }
       final medicineId = (data['medicineId'] ?? '').toString();
       final doseKey = (data['doseKey'] ?? '').toString();
       final status = (data['status'] ?? '').toString();
@@ -363,6 +381,24 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final mm = date.month.toString().padLeft(2, '0');
     final dd = date.day.toString().padLeft(2, '0');
     return '${date.year}-$mm-$dd';
+  }
+
+  Future<List<Medicine>> _decryptMedicines(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) async {
+    final result = <Medicine>[];
+    for (final doc in docs) {
+      try {
+        final plain = await PhiE2eeService.instance.decryptPhiMap(
+          stored: doc.data(),
+          domain: 'medicine',
+        );
+        result.add(Medicine.fromMap(plain, id: doc.id));
+      } catch (_) {
+        // Ignore malformed or undecryptable records to avoid crashing UI.
+      }
+    }
+    return result;
   }
 
   Widget _buildSloganCard() {
@@ -765,68 +801,77 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           }
 
           final docs = snapshot.data?.docs ?? [];
-          final medicines = docs
-              .map((doc) => Medicine.fromMap(doc.data(), id: doc.id))
-              .toList();
-          if (medicines.isNotEmpty) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              _runMissedCheckIfNeeded(medicines);
-              _cleanupExpiredMedicines(medicines);
-            });
-          }
-
-          return FutureBuilder<_PendingTodayData>(
-            future: _loadPendingTodayData(medicines),
+          return FutureBuilder<List<Medicine>>(
+            future: _decryptMedicines(docs),
             builder: (context, pendingSnapshot) {
               if (pendingSnapshot.connectionState == ConnectionState.waiting) {
                 return const Center(child: CircularProgressIndicator());
               }
 
-              final pendingMedicines =
-                  pendingSnapshot.data?.pendingMedicines ?? const <Medicine>[];
-              final dueToday = pendingMedicines.length;
-              final l10n = AppLocalizations.of(context)!;
+              final medicines = pendingSnapshot.data ?? const <Medicine>[];
+              if (medicines.isNotEmpty) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  _runMissedCheckIfNeeded(medicines);
+                  _cleanupExpiredMedicines(medicines);
+                });
+              }
 
-              return ListView(
-                padding: const EdgeInsets.fromLTRB(16, 18, 16, 30),
-                children: [
-                  _buildSloganCard(),
-                  const SizedBox(height: 14),
-                  Row(
+              return FutureBuilder<_PendingTodayData>(
+                future: _loadPendingTodayData(medicines),
+                builder: (context, pendingDataSnapshot) {
+                  if (pendingDataSnapshot.connectionState ==
+                      ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+
+                  final pendingMedicines =
+                      pendingDataSnapshot.data?.pendingMedicines ??
+                          const <Medicine>[];
+                  final dueToday = pendingMedicines.length;
+                  final l10n = AppLocalizations.of(context)!;
+
+                  return ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 18, 16, 30),
                     children: [
-                      Expanded(
-                        child: _buildStatCard(
-                          icon: Icons.calendar_month_outlined,
-                          title: l10n.today,
-                          value: '$dueToday',
-                          label: l10n.pending,
-                        ),
+                      _buildSloganCard(),
+                      const SizedBox(height: 14),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildStatCard(
+                              icon: Icons.calendar_month_outlined,
+                              title: l10n.today,
+                              value: '$dueToday',
+                              label: l10n.pending,
+                            ),
+                          ),
+                        ],
                       ),
+                      const SizedBox(height: 22),
+                      _buildSectionTitle(),
+                      const SizedBox(height: 12),
+                      if (pendingMedicines.isEmpty) ...[
+                        if (medicines.isEmpty)
+                          _buildEmptyScheduleCard()
+                        else
+                          _buildNoPendingTodayCard(),
+                        const SizedBox(height: 14),
+                        _buildAddMedicineButton(),
+                        const SizedBox(height: 10),
+                      ] else
+                        ...pendingMedicines.map((medicine) {
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: _buildMedicineCard(medicine),
+                          );
+                        }),
+                      if (pendingMedicines.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        _buildAddMedicineButton(),
+                      ],
                     ],
-                  ),
-                  const SizedBox(height: 22),
-                  _buildSectionTitle(),
-                  const SizedBox(height: 12),
-                  if (pendingMedicines.isEmpty) ...[
-                    if (medicines.isEmpty)
-                      _buildEmptyScheduleCard()
-                    else
-                      _buildNoPendingTodayCard(),
-                    const SizedBox(height: 14),
-                    _buildAddMedicineButton(),
-                    const SizedBox(height: 10),
-                  ] else
-                    ...pendingMedicines.map((medicine) {
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: _buildMedicineCard(medicine),
-                      );
-                    }),
-                  if (pendingMedicines.isNotEmpty) ...[
-                    const SizedBox(height: 2),
-                    _buildAddMedicineButton(),
-                  ],
-                ],
+                  );
+                },
               );
             },
           );

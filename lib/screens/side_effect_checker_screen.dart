@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:medicare_app/l10n/app_localizations.dart';
 import 'package:medicare_app/app.dart';
+import 'package:medicare_app/services/phi_e2ee_service.dart';
 import 'package:medicare_app/services/side_effect_ai_service.dart';
 import 'package:medicare_app/widgets/app_bar_pulse_indicator.dart';
 import 'package:medicare_app/widgets/app_navigation_drawer.dart';
@@ -59,8 +60,15 @@ class _SideEffectCheckerScreenState extends State<SideEffectCheckerScreen> {
           .collection('patients')
           .doc(uid)
           .get();
-      final data = doc.data();
-      if (data == null || !mounted) {
+      final stored = doc.data();
+      if (stored == null) {
+        return;
+      }
+      final data = await PhiE2eeService.instance.decryptPhiMap(
+        stored: stored,
+        domain: 'patient_profile',
+      );
+      if (!mounted) {
         return;
       }
 

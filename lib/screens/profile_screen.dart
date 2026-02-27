@@ -9,6 +9,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:medicare_app/app.dart';
 import 'package:medicare_app/models/patient_profile.dart';
+import 'package:medicare_app/services/phi_e2ee_service.dart';
 import 'package:medicare_app/widgets/app_bar_pulse_indicator.dart';
 import 'package:medicare_app/widgets/app_navigation_drawer.dart';
 import 'package:medicare_app/widgets/chatbot_fab.dart';
@@ -158,7 +159,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     final doc =
         await FirebaseFirestore.instance.collection('patients').doc(uid).get();
-    final data = doc.data() ?? <String, dynamic>{};
+    final stored = doc.data() ?? <String, dynamic>{};
+    final data = await PhiE2eeService.instance.decryptPhiMap(
+      stored: stored,
+      domain: 'patient_profile',
+    );
     final profile = PatientProfile.fromMap(data);
     final user = FirebaseAuth.instance.currentUser;
 
@@ -231,13 +236,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
         profileImageBase64: _profileImageBase64,
         allergies: allergies,
       );
+      final encrypted = await PhiE2eeService.instance.encryptPhiMap(
+        plain: profile.toMap(),
+        domain: 'patient_profile',
+      );
       await FirebaseFirestore.instance.collection('patients').doc(uid).set(
-            {
-              ...profile.toMap(),
-              'updatedAt': FieldValue.serverTimestamp(),
-            },
-            SetOptions(merge: true),
-          );
+        {
+          ...encrypted,
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
 
       final user = FirebaseAuth.instance.currentUser;
       final name = _nameController.text.trim();

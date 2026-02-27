@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:medicare_app/l10n/app_localizations.dart';
 import 'package:medicare_app/app.dart';
+import 'package:medicare_app/services/phi_e2ee_service.dart';
 import 'package:medicare_app/widgets/app_bar_pulse_indicator.dart';
 import 'package:medicare_app/widgets/app_navigation_drawer.dart';
 import 'package:medicare_app/widgets/chatbot_fab.dart';
@@ -73,11 +74,10 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
     }
   }
 
-  List<QueryDocumentSnapshot<Map<String, dynamic>>> _applyFilters(
-    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  List<Map<String, dynamic>> _applyFilters(
+    List<Map<String, dynamic>> docs,
   ) {
-    return docs.where((doc) {
-      final data = doc.data();
+    return docs.where((data) {
       final status = (data['status'] ?? 'pending').toString();
       final day = (data['dateKey'] ?? '').toString();
       if (_statusFilter != 'all' && status != _statusFilter) {
@@ -336,8 +336,7 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
     );
   }
 
-  Widget _doseHistoryCard(
-      List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
+  Widget _doseHistoryCard(List<Map<String, dynamic>> docs) {
     final l10n = AppLocalizations.of(context)!;
     if (docs.isEmpty) {
       return Container(
@@ -374,8 +373,7 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
     );
   }
 
-  Widget _doseRow(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
-    final data = doc.data();
+  Widget _doseRow(Map<String, dynamic> data) {
     final name = (data['medicineName'] ?? '').toString();
     final time = (data['scheduledTime'] ?? '').toString();
     final dateKey = (data['dateKey'] ?? '').toString();
@@ -460,6 +458,24 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
     );
   }
 
+  Future<List<Map<String, dynamic>>> _decryptDoseLogs(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) async {
+    final result = <Map<String, dynamic>>[];
+    for (final doc in docs) {
+      try {
+        final plain = await PhiE2eeService.instance.decryptPhiMap(
+          stored: doc.data(),
+          domain: 'dose_log',
+        );
+        plain['updatedAt'] =
+            (doc.data()['updatedAt'] as Timestamp?)?.millisecondsSinceEpoch ?? 0;
+        result.add(plain);
+      } catch (_) {}
+    }
+    return result;
+  }
+
   @override
   Widget build(BuildContext context) {
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -503,31 +519,34 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
           }
 
           final docs = snapshot.data?.docs ?? [];
-          docs.sort((a, b) {
-            final ad = (a.data()['dateKey'] ?? '').toString();
-            final bd = (b.data()['dateKey'] ?? '').toString();
-            if (ad != bd) return bd.compareTo(ad);
-            final at =
-                (a.data()['updatedAt'] as Timestamp?)?.millisecondsSinceEpoch ??
-                    0;
-            final bt =
-                (b.data()['updatedAt'] as Timestamp?)?.millisecondsSinceEpoch ??
-                    0;
-            return bt.compareTo(at);
-          });
+          return FutureBuilder<List<Map<String, dynamic>>>(
+            future: _decryptDoseLogs(docs),
+            builder: (context, decryptedSnapshot) {
+              if (decryptedSnapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              final historyDocs = decryptedSnapshot.data ?? const <Map<String, dynamic>>[];
+              historyDocs.sort((a, b) {
+                final ad = (a['dateKey'] ?? '').toString();
+                final bd = (b['dateKey'] ?? '').toString();
+                if (ad != bd) return bd.compareTo(ad);
+                final at = (a['updatedAt'] ?? 0) as int;
+                final bt = (b['updatedAt'] ?? 0) as int;
+                return bt.compareTo(at);
+              });
 
-          final historyDocs = docs.where((doc) {
-            final status = (doc.data()['status'] ?? '').toString();
-            return status == 'taken' || status == 'missed';
-          }).toList();
-          final filteredDocs = _applyFilters(historyDocs);
-          final takenCount = filteredDocs
-              .where((d) => (d.data()['status'] ?? '').toString() == 'taken')
-              .length;
-          final missedCount = filteredDocs
-              .where((d) => (d.data()['status'] ?? '').toString() == 'missed')
-              .length;
-          return ListView(
+              final onlyTakenMissed = historyDocs.where((doc) {
+                final status = (doc['status'] ?? '').toString();
+                return status == 'taken' || status == 'missed';
+              }).toList();
+              final filteredDocs = _applyFilters(onlyTakenMissed);
+              final takenCount = filteredDocs
+                  .where((d) => (d['status'] ?? '').toString() == 'taken')
+                  .length;
+              final missedCount = filteredDocs
+                  .where((d) => (d['status'] ?? '').toString() == 'missed')
+                  .length;
+              return ListView(
             padding: const EdgeInsets.all(16),
             children: [
               _filterBar(),
@@ -576,6 +595,8 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
               _doseHistoryCard(filteredDocs),
               const SizedBox(height: 20),
             ],
+          );
+            },
           );
         },
       ),

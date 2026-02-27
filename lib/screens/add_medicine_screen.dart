@@ -8,6 +8,7 @@ import 'package:medicare_app/app.dart';
 import 'package:medicare_app/models/medicine.dart';
 import 'package:medicare_app/services/gemini_prescription_service.dart';
 import 'package:medicare_app/services/notification_service.dart';
+import 'package:medicare_app/services/phi_e2ee_service.dart';
 import 'package:medicare_app/widgets/app_bar_pulse_indicator.dart';
 import 'package:medicare_app/widgets/app_navigation_drawer.dart';
 import 'package:medicare_app/widgets/chatbot_fab.dart';
@@ -934,8 +935,13 @@ class _AddMedicineScreenState extends State<AddMedicineScreen> {
       endDate: _endDateController.text.trim(),
     );
 
-    final payload = medicine.toMap()
+    final encrypted = await PhiE2eeService.instance.encryptPhiMap(
+      plain: medicine.toMap(),
+      domain: 'medicine',
+    );
+    final payload = encrypted
       ..['createdAt'] = FieldValue.serverTimestamp()
+      ..['updatedAt'] = FieldValue.serverTimestamp()
       ..['userId'] = user.uid;
 
     try {
@@ -1023,8 +1029,13 @@ class _AddMedicineScreenState extends State<AddMedicineScreen> {
           endDate: draft.endDateText.trim(),
         );
 
-        final payload = medicine.toMap()
+        final encrypted = await PhiE2eeService.instance.encryptPhiMap(
+          plain: medicine.toMap(),
+          domain: 'medicine',
+        );
+        final payload = encrypted
           ..['createdAt'] = FieldValue.serverTimestamp()
+          ..['updatedAt'] = FieldValue.serverTimestamp()
           ..['userId'] = user.uid;
 
         final docRef = await medicinesCollection.add(payload);

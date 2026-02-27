@@ -25,6 +25,7 @@ class _AiChatbotScreenState extends State<AiChatbotScreen> {
   ];
 
   bool _isSending = false;
+  bool _aiConsentGranted = false;
   String _prescriptionImageBase64 = '';
   String _prescriptionImageMimeType = '';
   String _prescriptionImageLabel = '';
@@ -85,6 +86,31 @@ class _AiChatbotScreenState extends State<AiChatbotScreen> {
     if (text.isEmpty || _isSending) {
       return;
     }
+    if (!_aiConsentGranted) {
+      final allow = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Share data with AI?'),
+          content: const Text(
+            'This sends your entered message and selected prescription image to the AI assistant service. Continue?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Allow'),
+            ),
+          ],
+        ),
+      );
+      if (allow != true) {
+        return;
+      }
+      setState(() => _aiConsentGranted = true);
+    }
 
     setState(() {
       _isSending = true;
@@ -103,6 +129,7 @@ class _AiChatbotScreenState extends State<AiChatbotScreen> {
       final result = await MedicalChatService.instance.chat(
         MedicalChatRequest(
           userMessage: text,
+          aiConsent: _aiConsentGranted,
           prescriptionImageBase64: _prescriptionImageBase64,
           prescriptionImageMimeType: _prescriptionImageMimeType,
           history: history,
@@ -160,6 +187,12 @@ class _AiChatbotScreenState extends State<AiChatbotScreen> {
     addSection('Diet Guidance', result.dietGuidance);
     addSection('Exercise Guidance', result.exerciseGuidance);
     addSection('Precautions', result.precautions);
+    if (buffer.isNotEmpty) {
+      buffer.writeln();
+    }
+    buffer.writeln(
+      'Meta: source=${result.source}, image_received=${result.imageReceived}',
+    );
 
     return buffer.toString().trim();
   }
@@ -197,6 +230,22 @@ class _AiChatbotScreenState extends State<AiChatbotScreen> {
                 ),
               ),
             ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 0, 10, 4),
+            child: SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text(
+                'Allow sharing with AI assistant',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+              ),
+              subtitle: const Text(
+                'Share message and selected prescription image for AI analysis.',
+                style: TextStyle(fontSize: 11),
+              ),
+              value: _aiConsentGranted,
+              onChanged: (value) => setState(() => _aiConsentGranted = value),
+            ),
+          ),
           Expanded(
             child: ListView.builder(
               controller: _scrollController,

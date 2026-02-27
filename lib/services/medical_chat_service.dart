@@ -6,12 +6,14 @@ import 'package:http/http.dart' as http;
 class MedicalChatRequest {
   MedicalChatRequest({
     required this.userMessage,
+    this.aiConsent = false,
     this.prescriptionImageBase64 = '',
     this.prescriptionImageMimeType = '',
     this.history = const <String>[],
   });
 
   final String userMessage;
+  final bool aiConsent;
   final String prescriptionImageBase64;
   final String prescriptionImageMimeType;
   final List<String> history;
@@ -19,6 +21,7 @@ class MedicalChatRequest {
   Map<String, dynamic> toJson() {
     final payload = <String, dynamic>{
       'user_message': userMessage,
+      'ai_consent': aiConsent,
       'history': history,
     };
     final imageData = prescriptionImageBase64.trim();
@@ -41,6 +44,7 @@ class MedicalChatResult {
     required this.dietGuidance,
     required this.exerciseGuidance,
     required this.precautions,
+    required this.imageReceived,
     required this.emergency,
     required this.source,
   });
@@ -51,6 +55,7 @@ class MedicalChatResult {
   final List<String> dietGuidance;
   final List<String> exerciseGuidance;
   final List<String> precautions;
+  final bool imageReceived;
   final bool emergency;
   final String source;
 
@@ -63,6 +68,7 @@ class MedicalChatResult {
       dietGuidance: _toStringList(data['diet_guidance']),
       exerciseGuidance: _toStringList(data['exercise_guidance']),
       precautions: _toStringList(data['precautions']),
+      imageReceived: data['image_received'] == true,
       emergency: data['emergency'] == true,
       source: (json['source'] ?? '').toString(),
     );
