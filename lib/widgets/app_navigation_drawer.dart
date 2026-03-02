@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:medicare_app/l10n/app_localizations.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:medicare_app/app.dart';
+import 'package:medicare_app/services/user_role_service.dart';
 
 class AppNavigationDrawer extends StatelessWidget {
   const AppNavigationDrawer({
@@ -156,7 +157,11 @@ class AppNavigationDrawer extends StatelessWidget {
     final avatarRadius = avatarDiameter / 2;
 
     return Drawer(
-      child: ListView(
+      child: StreamBuilder<AppUserRole?>(
+        stream: UserRoleService.instance.roleStream(),
+        builder: (context, roleSnapshot) {
+          final isCaregiver = roleSnapshot.data == AppUserRole.caregiver;
+          return ListView(
         padding: EdgeInsets.zero,
         children: [
           Container(
@@ -169,10 +174,16 @@ class AppNavigationDrawer extends StatelessWidget {
             ),
           ),
           ListTile(
-            selected: currentRoute == MyApp.routeHome,
+            selected: currentRoute ==
+                (isCaregiver
+                    ? MyApp.routeCaregiverDashboard
+                    : MyApp.routeHome),
             leading: const Icon(Icons.dashboard_outlined),
             title: Text(l10n.dashboard),
-            onTap: () => _navigate(context, MyApp.routeHome),
+            onTap: () => _navigate(
+              context,
+              isCaregiver ? MyApp.routeCaregiverDashboard : MyApp.routeHome,
+            ),
           ),
           ListTile(
             selected: currentRoute == MyApp.routeAdherence,
@@ -180,17 +191,24 @@ class AppNavigationDrawer extends StatelessWidget {
             title: Text(l10n.adherenceHistory),
             onTap: () => _navigate(context, MyApp.routeAdherence),
           ),
-          ListTile(
-            selected: currentRoute == MyApp.routeCaregivers,
-            leading: const Icon(Icons.people_alt_outlined),
-            title: Text(l10n.caregivers),
-            onTap: () => _navigate(context, MyApp.routeCaregivers),
-          ),
+          if (!isCaregiver)
+            ListTile(
+              selected: currentRoute == MyApp.routeCaregivers,
+              leading: const Icon(Icons.people_alt_outlined),
+              title: Text(l10n.caregivers),
+              onTap: () => _navigate(context, MyApp.routeCaregivers),
+            ),
           ListTile(
             selected: currentRoute == MyApp.routeAddMedicine,
             leading: const Icon(Icons.add_circle_outline),
-            title: Text(l10n.addMedicine),
+            title: Text(isCaregiver ? 'Add Medicine For Patient' : l10n.addMedicine),
             onTap: () => _navigate(context, MyApp.routeAddMedicine),
+          ),
+          ListTile(
+            selected: currentRoute == MyApp.routeStockManagement,
+            leading: const Icon(Icons.inventory_2_outlined),
+            title: const Text('Stock Management'),
+            onTap: () => _navigate(context, MyApp.routeStockManagement),
           ),
           ListTile(
             selected: currentRoute == MyApp.routeSettings,
@@ -207,6 +225,8 @@ class AppNavigationDrawer extends StatelessWidget {
             },
           ),
         ],
+      );
+        },
       ),
     );
   }

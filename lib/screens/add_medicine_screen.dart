@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:medicare_app/app.dart';
 import 'package:medicare_app/models/medicine.dart';
+import 'package:medicare_app/services/demo_email_service.dart';
+import 'package:medicare_app/services/demo_sms_service.dart';
 import 'package:medicare_app/services/gemini_prescription_service.dart';
 import 'package:medicare_app/services/notification_service.dart';
 import 'package:medicare_app/services/phi_e2ee_service.dart';
@@ -51,6 +53,10 @@ class _AddMedicineScreenState extends State<AddMedicineScreen> {
   bool _isImportingPrescription = false;
   bool _didLoadArgs = false;
   String? _editingMedicineId;
+  String _targetPatientName = '';
+  String _targetPatientEmail = '';
+  String _targetPatientPhone = '';
+  String _targetPatientRecordId = '';
   _AddMedicineEntryMode _entryMode = _AddMedicineEntryMode.select;
 
   @override
@@ -73,6 +79,18 @@ class _AddMedicineScreenState extends State<AddMedicineScreen> {
     final args = ModalRoute.of(context)?.settings.arguments;
     if (args is! Map<String, dynamic>) {
       return;
+    }
+    final target = args['targetPatient'];
+    if (target is Map) {
+      _targetPatientName = (target['name'] ?? '').toString().trim();
+      _targetPatientEmail = (target['email'] ?? '').toString().trim();
+      _targetPatientPhone = (target['phone'] ?? '').toString().trim();
+      _targetPatientRecordId = (target['recordId'] ?? '').toString().trim();
+      if (_targetPatientName.isNotEmpty ||
+          _targetPatientEmail.isNotEmpty ||
+          _targetPatientPhone.isNotEmpty) {
+        _entryMode = _AddMedicineEntryMode.manual;
+      }
     }
 
     final medicineId = (args['medicineId'] ?? '').toString().trim();
@@ -223,6 +241,39 @@ class _AddMedicineScreenState extends State<AddMedicineScreen> {
     } catch (_) {
       return null;
     }
+  }
+
+  bool _hasDoseAtLeastOneMinuteAheadForDate(
+    DateTime date,
+    List<DoseSchedule> doses,
+  ) {
+    final now = DateTime.now();
+    final day = DateTime(date.year, date.month, date.day);
+    final today = DateTime(now.year, now.month, now.day);
+    final isToday = day.year == today.year &&
+        day.month == today.month &&
+        day.day == today.day;
+    if (!isToday) {
+      return true;
+    }
+    final threshold = now.add(const Duration(minutes: 1));
+    for (final dose in doses) {
+      final parsed = _parseTimeOfDay(dose.time);
+      if (parsed == null) {
+        continue;
+      }
+      final scheduled = DateTime(
+        now.year,
+        now.month,
+        now.day,
+        parsed.hour,
+        parsed.minute,
+      );
+      if (scheduled.isAfter(threshold)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   static TimeOfDay? _parseTimeOfDay(String raw) {
@@ -906,6 +957,72 @@ class _AddMedicineScreenState extends State<AddMedicineScreen> {
       ..add(const _DoseFormRow());
   }
 
+  String _scheduleSummary(List<DoseSchedule> doses) {
+    if (doses.isEmpty) {
+      return '-';
+    }
+    return doses.map((dose) => '${dose.time} (${dose.mealLabel})').join(', ');
+  }
+
+  String _actorName(User user) {
+    final display = (user.displayName ?? '').trim();
+    if (display.isNotEmpty) {
+      return display;
+    }
+    final email = (user.email ?? '').trim();
+    if (email.isNotEmpty && email.contains('@')) {
+      return email.split('@').first;
+    }
+    return 'Caregiver';
+  }
+
+  Future<void> _notifyPatientAssignment({
+    required User actor,
+    required Medicine medicine,
+    required List<DoseSchedule> doses,
+  }) async {
+    final patientEmail = _targetPatientEmail.trim();
+    final patientPhone = _targetPatientPhone.trim();
+    final patientName = _targetPatientName.trim();
+    final caregiverName = _actorName(actor);
+    final schedules =
+        doses.map((dose) => '${dose.time} (${dose.mealLabel})').toList();
+
+    if (patientEmail.isNotEmpty) {
+      try {
+        await DemoEmailService.instance.sendPatientMedicineAssignedEmail(
+          toEmail: patientEmail,
+          patientName: patientName,
+          caregiverName: caregiverName,
+          medicineName: medicine.name,
+          dosage: medicine.dosage,
+          schedules: schedules,
+          startDate: medicine.startDate,
+          endDate: medicine.endDate,
+        );
+      } catch (e) {
+        debugPrint('Patient email delivery failed: $e');
+      }
+    }
+
+    if (patientPhone.isNotEmpty) {
+      try {
+        await DemoSmsService.instance.sendPatientMedicineAssignedSms(
+          toPhone: patientPhone,
+          patientName: patientName,
+          caregiverName: caregiverName,
+          medicineName: medicine.name,
+          dosage: medicine.dosage,
+          schedules: schedules,
+          startDate: medicine.startDate,
+          endDate: medicine.endDate,
+        );
+      } catch (e) {
+        debugPrint('Patient SMS delivery failed: $e');
+      }
+    }
+  }
+
   Future<void> _saveMedicine({bool addAnother = false}) async {
     if (!_formKey.currentState!.validate()) return;
     final user = FirebaseAuth.instance.currentUser;
@@ -923,6 +1040,16 @@ class _AddMedicineScreenState extends State<AddMedicineScreen> {
       );
       return;
     }
+    final effectiveStart = _startDate ?? _tryParseDate(_startDateController.text);
+    if (effectiveStart != null &&
+        !_hasDoseAtLeastOneMinuteAheadForDate(effectiveStart, doses)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('For today, keep at least one dose time 1 minute ahead.'),
+        ),
+      );
+      return;
+    }
 
     setState(() => _isSaving = true);
 
@@ -935,19 +1062,26 @@ class _AddMedicineScreenState extends State<AddMedicineScreen> {
       endDate: _endDateController.text.trim(),
     );
 
+    final plain = medicine.toMap()
+      ..['targetPatientName'] = _targetPatientName
+      ..['targetPatientEmail'] = _targetPatientEmail
+      ..['targetPatientPhone'] = _targetPatientPhone
+      ..['targetPatientRecordId'] = _targetPatientRecordId;
     final encrypted = await PhiE2eeService.instance.encryptPhiMap(
-      plain: medicine.toMap(),
+      plain: plain,
       domain: 'medicine',
     );
     final payload = encrypted
       ..['createdAt'] = FieldValue.serverTimestamp()
       ..['updatedAt'] = FieldValue.serverTimestamp()
-      ..['userId'] = user.uid;
+      ..['userId'] = user.uid
+      ..['targetPatientRecordId'] = _targetPatientRecordId;
 
     try {
       final medicines = FirebaseFirestore.instance.collection('medicines');
+      final isNewRecord = _editingMedicineId == null || _editingMedicineId!.isEmpty;
       DocumentReference<Map<String, dynamic>> docRef;
-      if (_editingMedicineId == null || _editingMedicineId!.isEmpty) {
+      if (isNewRecord) {
         docRef = await medicines.add(payload);
       } else {
         docRef = medicines.doc(_editingMedicineId);
@@ -960,6 +1094,8 @@ class _AddMedicineScreenState extends State<AddMedicineScreen> {
       // Do not block UI on long notification scheduling work.
       unawaited(
         _scheduleRemindersInBackground(
+          actor: user,
+          isNewRecord: isNewRecord,
           medicineId: docRef.id,
           medicine: medicine,
           doses: doses,
@@ -1019,6 +1155,11 @@ class _AddMedicineScreenState extends State<AddMedicineScreen> {
         if (doses.isEmpty) {
           continue;
         }
+        final startDate = _tryParseDate(draft.startDateText.trim());
+        if (startDate != null &&
+            !_hasDoseAtLeastOneMinuteAheadForDate(startDate, doses)) {
+          continue;
+        }
 
         final medicine = Medicine(
           name: name,
@@ -1029,25 +1170,33 @@ class _AddMedicineScreenState extends State<AddMedicineScreen> {
           endDate: draft.endDateText.trim(),
         );
 
+        final plain = medicine.toMap()
+          ..['targetPatientName'] = _targetPatientName
+          ..['targetPatientEmail'] = _targetPatientEmail
+          ..['targetPatientPhone'] = _targetPatientPhone
+          ..['targetPatientRecordId'] = _targetPatientRecordId;
         final encrypted = await PhiE2eeService.instance.encryptPhiMap(
-          plain: medicine.toMap(),
+          plain: plain,
           domain: 'medicine',
         );
         final payload = encrypted
           ..['createdAt'] = FieldValue.serverTimestamp()
           ..['updatedAt'] = FieldValue.serverTimestamp()
-          ..['userId'] = user.uid;
+          ..['userId'] = user.uid
+          ..['targetPatientRecordId'] = _targetPatientRecordId;
 
         final docRef = await medicinesCollection.add(payload);
-        final startDate = _tryParseDate(medicine.startDate);
+        final parsedStartDate = _tryParseDate(medicine.startDate);
         final endDate = _tryParseDate(medicine.endDate);
 
         unawaited(
           _scheduleRemindersInBackground(
+            actor: user,
+            isNewRecord: true,
             medicineId: docRef.id,
             medicine: medicine,
             doses: doses,
-            startDate: startDate,
+            startDate: parsedStartDate,
             endDate: endDate,
           ),
         );
@@ -1079,6 +1228,8 @@ class _AddMedicineScreenState extends State<AddMedicineScreen> {
   }
 
   Future<void> _scheduleRemindersInBackground({
+    required User actor,
+    required bool isNewRecord,
     required String medicineId,
     required Medicine medicine,
     required List<DoseSchedule> doses,
@@ -1086,6 +1237,51 @@ class _AddMedicineScreenState extends State<AddMedicineScreen> {
     required DateTime? endDate,
   }) async {
     try {
+      final isAssignedPatient = _targetPatientName.trim().isNotEmpty ||
+          _targetPatientEmail.trim().isNotEmpty ||
+          _targetPatientPhone.trim().isNotEmpty;
+      if (isAssignedPatient) {
+        await NotificationService.instance.showInstantNotification(
+          id: medicineId.hashCode ^ 999,
+          title: 'Patient medicine assigned',
+          body:
+              '${medicine.name} assigned for ${_targetPatientName.trim().isEmpty ? 'patient' : _targetPatientName.trim()} (${_scheduleSummary(doses)})',
+        );
+        if (isNewRecord) {
+          await _notifyPatientAssignment(
+            actor: actor,
+            medicine: medicine,
+            doses: doses,
+          );
+        }
+        if (startDate != null && endDate != null) {
+          await NotificationService.instance.schedulePatientMessageReminders(
+            id: medicineId.hashCode,
+            medicineName: medicine.name,
+            dosage: medicine.dosage,
+            doses: doses,
+            startDate: startDate,
+            endDate: endDate,
+            patientName: _targetPatientName,
+            patientEmail: _targetPatientEmail,
+            patientPhone: _targetPatientPhone,
+          );
+          await NotificationService.instance.scheduleVoiceCallReminders(
+            id: medicineId.hashCode,
+            medicineName: medicine.name,
+            dosage: medicine.dosage,
+            doses: doses,
+            startDate: startDate,
+            endDate: endDate,
+            patientName: _targetPatientName,
+            patientPhone: _targetPatientPhone,
+            caregiverName: _actorName(actor),
+            selfMode: false,
+          );
+        }
+        return;
+      }
+
       await NotificationService.instance.showInstantNotification(
         id: medicineId.hashCode ^ 999,
         title: 'Medicare',
@@ -1106,6 +1302,18 @@ class _AddMedicineScreenState extends State<AddMedicineScreen> {
           startDate: startDate,
           endDate: endDate,
         );
+        await NotificationService.instance.scheduleVoiceCallReminders(
+          id: medicineId.hashCode,
+          medicineName: medicine.name,
+          dosage: medicine.dosage,
+          doses: doses,
+          startDate: startDate,
+          endDate: endDate,
+          patientName: _actorName(actor),
+          patientPhone: actor.phoneNumber ?? '',
+          caregiverName: '',
+          selfMode: true,
+        );
       }
     } catch (e) {
       debugPrint('Background reminder scheduling failed: $e');
@@ -1117,6 +1325,9 @@ class _AddMedicineScreenState extends State<AddMedicineScreen> {
     final isEditing =
         _editingMedicineId != null && _editingMedicineId!.isNotEmpty;
     final showEntrySelection = !isEditing && _entryMode == _AddMedicineEntryMode.select;
+    final isPatientAssigned = _targetPatientName.isNotEmpty ||
+        _targetPatientEmail.isNotEmpty ||
+        _targetPatientPhone.isNotEmpty;
     return Scaffold(
       appBar: AppBar(
         automaticallyImplyLeading: false,
@@ -1206,6 +1417,26 @@ class _AddMedicineScreenState extends State<AddMedicineScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
+                          if (isPatientAssigned)
+                            Container(
+                              width: double.infinity,
+                              margin: const EdgeInsets.only(bottom: 12),
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFEAF2FF),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: const Color(0xFFBBD4FF)),
+                              ),
+                              child: Text(
+                                'Assigning for: '
+                                '${_targetPatientName.isEmpty ? 'Patient' : _targetPatientName}'
+                                '${_targetPatientPhone.isEmpty ? '' : ' ($_targetPatientPhone)'}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF0D47A1),
+                                ),
+                              ),
+                            ),
                           if (!isEditing) ...[
                             Align(
                               alignment: Alignment.centerRight,

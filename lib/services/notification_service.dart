@@ -12,6 +12,11 @@ import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:medicare_app/firebase_options.dart';
 import 'package:medicare_app/models/medicine.dart';
 import 'package:medicare_app/services/dose_tracking_service.dart';
+import 'package:medicare_app/services/demo_email_service.dart';
+import 'package:medicare_app/services/demo_sms_service.dart';
+import 'package:medicare_app/services/stock_service.dart';
+import 'package:medicare_app/services/user_role_service.dart';
+import 'package:medicare_app/services/voice_call_service.dart';
 import 'package:medicare_app/services/voice_alert_service.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:timezone/data/latest_all.dart' as tz_data;
@@ -61,6 +66,8 @@ class NotificationService {
   bool _localNotificationsReady = false;
   String _timezoneName = 'unknown';
   final Map<int, Timer> _inAppVoiceTimers = <int, Timer>{};
+  final Map<int, List<Timer>> _patientMessageTimers = <int, List<Timer>>{};
+  final Map<int, List<Timer>> _voiceCallTimers = <int, List<Timer>>{};
 
   Future<void> init() async {
     if (_isInitialized) return;
@@ -179,7 +186,7 @@ class NotificationService {
     }
 
     final now = tz.TZDateTime.now(tz.local);
-    final minLead = now.add(const Duration(minutes: 2));
+    final minLead = now.add(const Duration(minutes: 1));
     final startDay = DateTime(startDate.year, startDate.month, startDate.day);
     final endDay = DateTime(endDate.year, endDate.month, endDate.day);
 
@@ -317,6 +324,8 @@ class NotificationService {
       if (medicineId.isEmpty || dateKey.isEmpty) {
         return;
       }
+      final role = await UserRoleService.instance.getCurrentRole();
+      final isCaregiver = role == AppUserRole.caregiver;
       if (actionId.isEmpty) {
         await VoiceAlertService.instance.speakReminder(
           medicineName: medicineName,
@@ -325,6 +334,9 @@ class NotificationService {
       }
 
       if (actionId == _actionTaken) {
+        if (isCaregiver) {
+          return;
+        }
         await DoseTrackingService.instance.setDoseStatusFromNotification(
           medicineId: medicineId,
           medicineName: medicineName,
@@ -337,6 +349,15 @@ class NotificationService {
           status: 'taken',
           patientId: patientId,
         );
+        final stockResult =
+            await StockService.instance.consumeOneByMedicine(medicineName);
+        if (stockResult.lowStockAlert) {
+          await showInstantNotification(
+            id: medicineName.hashCode ^ 787878,
+            title: 'Low Stock Alert',
+            body: stockResult.message,
+          );
+        }
       } else if (actionId == _actionSkipped) {
         await DoseTrackingService.instance.setDoseStatusFromNotification(
           medicineId: medicineId,
@@ -556,10 +577,198 @@ class NotificationService {
     }
   }
 
+  Future<void> schedulePatientMessageReminders({
+    required int id,
+    required String medicineName,
+    required String dosage,
+    required List<DoseSchedule> doses,
+    required DateTime startDate,
+    required DateTime endDate,
+    required String patientName,
+    required String patientEmail,
+    required String patientPhone,
+  }) async {
+    _clearPatientMessageTimers(id);
+
+    final now = DateTime.now();
+    final startDay = DateTime(startDate.year, startDate.month, startDate.day);
+    final endDay = DateTime(endDate.year, endDate.month, endDate.day);
+    if (endDay.isBefore(startDay) || doses.isEmpty) {
+      return;
+    }
+
+    final today = DateTime(now.year, now.month, now.day);
+    final effectiveStart = startDay.isAfter(today) ? startDay : today;
+    if (effectiveStart.isAfter(endDay)) {
+      return;
+    }
+
+    final timerBag = <Timer>[];
+    _patientMessageTimers[id] = timerBag;
+
+    for (var day = effectiveStart;
+        !day.isAfter(endDay);
+        day = day.add(const Duration(days: 1))) {
+      for (final dose in doses) {
+        final parsed = _parseTimeOfDay(dose.time);
+        if (parsed == null) {
+          continue;
+        }
+        final scheduledAt = DateTime(
+          day.year,
+          day.month,
+          day.day,
+          parsed.hour,
+          parsed.minute,
+        );
+        if (!scheduledAt.isAfter(now)) {
+          continue;
+        }
+
+        final dateKey = _dateKey(scheduledAt);
+        final delay = scheduledAt.difference(now);
+        final timer = Timer(delay, () async {
+          try {
+            if (patientEmail.trim().isNotEmpty) {
+              await DemoEmailService.instance.sendPatientMedicineReminderEmail(
+                toEmail: patientEmail,
+                patientName: patientName,
+                medicineName: medicineName,
+                dosage: dosage,
+                scheduledTime: dose.time,
+                dateKey: dateKey,
+              );
+            }
+          } catch (e) {
+            debugPrint('Patient reminder email failed: $e');
+          }
+          try {
+            if (patientPhone.trim().isNotEmpty) {
+              await DemoSmsService.instance.sendPatientMedicineReminderSms(
+                toPhone: patientPhone,
+                patientName: patientName,
+                medicineName: medicineName,
+                dosage: dosage,
+                scheduledTime: dose.time,
+                dateKey: dateKey,
+              );
+            }
+          } catch (e) {
+            debugPrint('Patient reminder SMS failed: $e');
+          }
+        });
+        timerBag.add(timer);
+      }
+    }
+
+    debugPrint(
+      'Scheduled patient message reminders: medicine=$medicineName timers=${timerBag.length}',
+    );
+  }
+
+  void _clearPatientMessageTimers(int id) {
+    final existing = _patientMessageTimers.remove(id);
+    if (existing == null) {
+      return;
+    }
+    for (final timer in existing) {
+      timer.cancel();
+    }
+  }
+
+  Future<void> scheduleVoiceCallReminders({
+    required int id,
+    required String medicineName,
+    required String dosage,
+    required List<DoseSchedule> doses,
+    required DateTime startDate,
+    required DateTime endDate,
+    required String patientName,
+    required String patientPhone,
+    required String caregiverName,
+    required bool selfMode,
+  }) async {
+    _clearVoiceCallTimers(id);
+
+    final phone = patientPhone.trim();
+    if (phone.isEmpty || doses.isEmpty) {
+      return;
+    }
+
+    final now = DateTime.now();
+    final startDay = DateTime(startDate.year, startDate.month, startDate.day);
+    final endDay = DateTime(endDate.year, endDate.month, endDate.day);
+    if (endDay.isBefore(startDay)) {
+      return;
+    }
+    final today = DateTime(now.year, now.month, now.day);
+    final effectiveStart = startDay.isAfter(today) ? startDay : today;
+    if (effectiveStart.isAfter(endDay)) {
+      return;
+    }
+
+    final timers = <Timer>[];
+    _voiceCallTimers[id] = timers;
+    for (var day = effectiveStart;
+        !day.isAfter(endDay);
+        day = day.add(const Duration(days: 1))) {
+      for (final dose in doses) {
+        final parsed = _parseTimeOfDay(dose.time);
+        if (parsed == null) continue;
+
+        final scheduledAt = DateTime(
+          day.year,
+          day.month,
+          day.day,
+          parsed.hour,
+          parsed.minute,
+        );
+        if (!scheduledAt.isAfter(now)) {
+          continue;
+        }
+
+        final delay = scheduledAt.difference(now);
+        final dateKey = _dateKey(scheduledAt);
+        final timer = Timer(delay, () async {
+          try {
+            await VoiceCallService.instance.triggerReminderCall(
+              toPhone: phone,
+              patientName: patientName,
+              caregiverName: caregiverName,
+              medicineName: medicineName,
+              dosage: dosage,
+              scheduledTime: dose.time,
+              dateKey: dateKey,
+              selfMode: selfMode,
+            );
+          } catch (e) {
+            debugPrint('Voice reminder call failed: $e');
+          }
+        });
+        timers.add(timer);
+      }
+    }
+    debugPrint(
+      'Scheduled voice call reminders: medicine=$medicineName calls=${timers.length} selfMode=$selfMode',
+    );
+  }
+
+  void _clearVoiceCallTimers(int id) {
+    final existing = _voiceCallTimers.remove(id);
+    if (existing == null) {
+      return;
+    }
+    for (final timer in existing) {
+      timer.cancel();
+    }
+  }
+
   Future<void> cancelMedicineReminders({
     required int id,
     int days = 5000,
   }) async {
+    _clearPatientMessageTimers(id);
+    _clearVoiceCallTimers(id);
     if (!_localNotificationsReady) return;
     final baseId = id.abs() % 20000000;
     for (int i = 0; i < days; i++) {

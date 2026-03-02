@@ -6,10 +6,15 @@ import 'package:medicare_app/screens/add_medicine_screen.dart';
 import 'package:medicare_app/screens/adherence_screen.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:medicare_app/screens/ai_chatbot_screen.dart';
+import 'package:medicare_app/screens/caregiver_dashboard_screen.dart';
+import 'package:medicare_app/screens/caregiver_patient_medicines_screen.dart';
 import 'package:medicare_app/screens/language_settings_screen.dart';
 import 'package:medicare_app/screens/home_screen.dart';
+import 'package:medicare_app/screens/role_selection_screen.dart';
+import 'package:medicare_app/screens/stock_management_screen.dart';
 import 'package:medicare_app/services/app_language_controller.dart';
 import 'package:medicare_app/services/notification_service.dart';
+import 'package:medicare_app/services/user_role_service.dart';
 import 'screens/caregivers_screen.dart';
 import 'screens/profile_screen.dart';
 
@@ -54,6 +59,11 @@ class MyApp extends StatelessWidget {
   static const String routeSideEffects = '/side_effects';
   static const String routeSettings = '/settings';
   static const String routeChatbot = '/chatbot';
+  static const String routeStockManagement = '/stock_management';
+  static const String routeRoleSelection = '/role_selection';
+  static const String routeCaregiverDashboard = '/caregiver_dashboard';
+  static const String routeCaregiverPatientMedicines =
+      '/caregiver_patient_medicines';
 
   @override
   Widget build(BuildContext context) {
@@ -128,6 +138,12 @@ class MyApp extends StatelessWidget {
             routeAdherence: (context) => const AdherenceScreen(),
             routeSettings: (context) => const LanguageSettingsScreen(),
             routeChatbot: (context) => const AiChatbotScreen(),
+            routeStockManagement: (context) => const StockManagementScreen(),
+            routeRoleSelection: (context) => const RoleSelectionScreen(),
+            routeCaregiverDashboard: (context) =>
+                const CaregiverDashboardScreen(),
+            routeCaregiverPatientMedicines: (context) =>
+                const CaregiverPatientMedicinesScreen(),
           },
         );
       },
@@ -145,6 +161,9 @@ class _AuthGate extends StatefulWidget {
 class _AuthGateState extends State<_AuthGate> {
   String? _lastInitUid;
   bool _isInitRunning = false;
+  String? _resolvedRoleUid;
+  AppUserRole? _resolvedRole;
+  bool _isRoleLoading = false;
 
   Future<void> _ensureNotificationInit(User user) async {
     if (_isInitRunning || _lastInitUid == user.uid) {
@@ -158,6 +177,29 @@ class _AuthGateState extends State<_AuthGate> {
       // Keep auth flow alive even if notification init fails.
     } finally {
       _isInitRunning = false;
+    }
+  }
+
+  Future<void> _ensureRoleLoaded(User user) async {
+    if (_isRoleLoading || _resolvedRoleUid == user.uid) {
+      return;
+    }
+    _isRoleLoading = true;
+    try {
+      final role = await UserRoleService.instance.getCurrentRole();
+      if (!mounted) return;
+      setState(() {
+        _resolvedRoleUid = user.uid;
+        _resolvedRole = role;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _resolvedRoleUid = user.uid;
+        _resolvedRole = null;
+      });
+    } finally {
+      _isRoleLoading = false;
     }
   }
 
@@ -176,13 +218,28 @@ class _AuthGateState extends State<_AuthGate> {
         final user = snapshot.data;
         if (user == null) {
           _lastInitUid = null;
+          _resolvedRoleUid = null;
+          _resolvedRole = null;
           return const LoginScreen();
         }
 
         WidgetsBinding.instance.addPostFrameCallback((_) {
           _ensureNotificationInit(user);
+          _ensureRoleLoaded(user);
         });
-        return const HomeScreen();
+        if (_resolvedRoleUid != user.uid) {
+          return const Scaffold(
+            backgroundColor: Colors.white,
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+        if (_resolvedRole == AppUserRole.caregiver) {
+          return const CaregiverDashboardScreen();
+        }
+        if (_resolvedRole == AppUserRole.patient) {
+          return const HomeScreen();
+        }
+        return const RoleSelectionScreen();
       },
     );
   }
@@ -223,6 +280,7 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       await NotificationService.instance.init();
     } catch (_) {}
+    await UserRoleService.instance.ensureUserDoc();
   }
 
   Future<void> _onLoginPressed() async {
@@ -236,10 +294,8 @@ class _LoginScreenState extends State<LoginScreen> {
         password: _passwordController.text.trim(),
       );
       await _initNotificationsAfterAuth();
-      if (!mounted) {
-        return;
-      }
-      Navigator.pushReplacementNamed(context, MyApp.routeHome);
+      if (!mounted) return;
+      Navigator.pushReplacementNamed(context, MyApp.routeRoleSelection);
     } on FirebaseAuthException catch (e) {
       if (!mounted) {
         return;
@@ -259,10 +315,8 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       await _signInWithGoogle();
       await _initNotificationsAfterAuth();
-      if (!mounted) {
-        return;
-      }
-      Navigator.pushReplacementNamed(context, MyApp.routeHome);
+      if (!mounted) return;
+      Navigator.pushReplacementNamed(context, MyApp.routeRoleSelection);
     } on FirebaseAuthException catch (e) {
       if (!mounted) {
         return;
@@ -393,7 +447,7 @@ class _LoginScreenState extends State<LoginScreen> {
       await FirebaseAuth.instance.signInWithCredential(credential);
       await _initNotificationsAfterAuth();
       if (!mounted) return;
-      Navigator.pushReplacementNamed(context, MyApp.routeHome);
+      Navigator.pushReplacementNamed(context, MyApp.routeRoleSelection);
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -629,6 +683,7 @@ class _SignupScreenState extends State<SignupScreen> {
     try {
       await NotificationService.instance.init();
     } catch (_) {}
+    await UserRoleService.instance.ensureUserDoc();
   }
 
   Future<void> _onSignupPressed() async {
@@ -646,12 +701,10 @@ class _SignupScreenState extends State<SignupScreen> {
         await credential.user?.updateDisplayName(_nameController.text.trim());
       }
       await _initNotificationsAfterAuth();
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
       Navigator.pushNamedAndRemoveUntil(
         context,
-        MyApp.routeHome,
+        MyApp.routeRoleSelection,
         (route) => false,
       );
     } on FirebaseAuthException catch (e) {
@@ -673,12 +726,10 @@ class _SignupScreenState extends State<SignupScreen> {
     try {
       await _signInWithGoogle();
       await _initNotificationsAfterAuth();
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
       Navigator.pushNamedAndRemoveUntil(
         context,
-        MyApp.routeHome,
+        MyApp.routeRoleSelection,
         (route) => false,
       );
     } on FirebaseAuthException catch (e) {

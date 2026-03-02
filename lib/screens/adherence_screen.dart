@@ -1,9 +1,10 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:medicare_app/l10n/app_localizations.dart';
 import 'package:medicare_app/app.dart';
+import 'package:medicare_app/l10n/app_localizations.dart';
 import 'package:medicare_app/services/phi_e2ee_service.dart';
+import 'package:medicare_app/services/user_role_service.dart';
 import 'package:medicare_app/widgets/app_bar_pulse_indicator.dart';
 import 'package:medicare_app/widgets/app_navigation_drawer.dart';
 import 'package:medicare_app/widgets/chatbot_fab.dart';
@@ -19,6 +20,49 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
   DateTime? _selectedDate;
   String _statusFilter = 'all';
   bool _isClearing = false;
+  bool _isRoleLoading = true;
+  bool _isCaregiver = false;
+  List<Map<String, String>> _caregiverPatients = <Map<String, String>>[];
+  String _selectedPatientRecordId = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _bootstrapRoleAndPatients();
+  }
+
+  Future<void> _bootstrapRoleAndPatients() async {
+    final role = await UserRoleService.instance.getCurrentRole();
+    final caregiver = role == AppUserRole.caregiver;
+    if (!caregiver) {
+      if (!mounted) return;
+      setState(() {
+        _isCaregiver = false;
+        _isRoleLoading = false;
+      });
+      return;
+    }
+
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final snapshot = await FirebaseFirestore.instance
+        .collection('caregiver_patients')
+        .where('caregiverId', isEqualTo: uid)
+        .get();
+    final patients = snapshot.docs.map((doc) {
+      final data = doc.data();
+      return <String, String>{
+        'id': doc.id,
+        'name': (data['name'] ?? '').toString().trim(),
+      };
+    }).toList();
+    if (!mounted) return;
+    setState(() {
+      _isCaregiver = true;
+      _caregiverPatients = patients;
+      _selectedPatientRecordId = patients.isEmpty ? '' : patients.first['id']!;
+      _isRoleLoading = false;
+    });
+  }
 
   Color _statusColor(String status) {
     switch (status) {
@@ -90,7 +134,7 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
     }).toList();
   }
 
-  Future<void> _clearHistory(String uid) async {
+  Future<void> _clearHistoryByDocIds(List<String> docIds) async {
     final l10n = AppLocalizations.of(context)!;
     final confirm = await showDialog<bool>(
       context: context,
@@ -115,26 +159,17 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
     if (confirm != true || !mounted) {
       return;
     }
-
     setState(() => _isClearing = true);
     try {
-      final collection = FirebaseFirestore.instance.collection('dose_logs');
-      while (true) {
-        final snapshot = await collection
-            .where('patientId', isEqualTo: uid)
-            .limit(300)
-            .get();
-        if (snapshot.docs.isEmpty) {
-          break;
-        }
-
+      const chunk = 300;
+      for (var i = 0; i < docIds.length; i += chunk) {
         final batch = FirebaseFirestore.instance.batch();
-        for (final doc in snapshot.docs) {
-          batch.delete(doc.reference);
+        final end = (i + chunk > docIds.length) ? docIds.length : i + chunk;
+        for (final docId in docIds.sublist(i, end)) {
+          batch.delete(FirebaseFirestore.instance.collection('dose_logs').doc(docId));
         }
         await batch.commit();
       }
-
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(l10n.adherenceCleared)),
@@ -164,6 +199,40 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
         _selectedDate = DateTime(selected.year, selected.month, selected.day));
   }
 
+  Widget _caregiverPatientSelector() {
+    if (!_isCaregiver) {
+      return const SizedBox.shrink();
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: _selectedPatientRecordId.isEmpty ? null : _selectedPatientRecordId,
+          hint: const Text('Select Patient'),
+          isExpanded: true,
+          items: _caregiverPatients.map((patient) {
+            final id = patient['id'] ?? '';
+            final name = patient['name']?.isEmpty ?? true
+                ? 'Unnamed patient'
+                : patient['name']!;
+            return DropdownMenuItem<String>(
+              value: id,
+              child: Text(name),
+            );
+          }).toList(),
+          onChanged: (value) {
+            if (value == null) return;
+            setState(() => _selectedPatientRecordId = value);
+          },
+        ),
+      ),
+    );
+  }
+
   Widget _filterBar() {
     final l10n = AppLocalizations.of(context)!;
     return Container(
@@ -172,13 +241,6 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
         color: Colors.white,
         borderRadius: BorderRadius.circular(30),
         border: Border.all(color: const Color(0xFFD4DDED)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x110F172A),
-            blurRadius: 10,
-            offset: Offset(0, 4),
-          ),
-        ],
       ),
       child: Row(
         children: [
@@ -187,8 +249,7 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
               onTap: _pickDate,
               borderRadius: BorderRadius.circular(22),
               child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 child: Row(
                   children: [
                     const Icon(
@@ -231,7 +292,7 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
                 children: [
                   Text(
                     '${l10n.type}:',
-                    style: TextStyle(
+                    style: const TextStyle(
                       color: Color(0xFF4B5563),
                       fontSize: 16,
                     ),
@@ -240,8 +301,7 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
                   Text(
                     _statusFilter == 'all'
                         ? l10n.all
-                        : _statusFilter[0].toUpperCase() +
-                            _statusFilter.substring(1),
+                        : _statusFilter[0].toUpperCase() + _statusFilter.substring(1),
                     style: const TextStyle(
                       color: Color(0xFF111827),
                       fontSize: 16,
@@ -270,13 +330,6 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(22),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x110F172A),
-            blurRadius: 12,
-            offset: Offset(0, 6),
-          ),
-        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -337,7 +390,6 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
   }
 
   Widget _doseHistoryCard(List<Map<String, dynamic>> docs) {
-    final l10n = AppLocalizations.of(context)!;
     if (docs.isEmpty) {
       return Container(
         padding: const EdgeInsets.all(20),
@@ -345,7 +397,7 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
           color: Colors.white,
           borderRadius: BorderRadius.circular(20),
         ),
-        child: Text(l10n.doseHistory),
+        child: const Text('No history found for selected filters'),
       );
     }
 
@@ -353,19 +405,12 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x110F172A),
-            blurRadius: 12,
-            offset: Offset(0, 6),
-          ),
-        ],
       ),
       child: Column(
         children: [
-          for (var i = 0; i < docs.length && i < 20; i++) ...[
+          for (var i = 0; i < docs.length && i < 40; i++) ...[
             _doseRow(docs[i]),
-            if (i < docs.length - 1 && i < 19)
+            if (i < docs.length - 1 && i < 39)
               const Divider(height: 1, color: Color(0xFFE7ECF5)),
           ],
         ],
@@ -375,6 +420,7 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
 
   Widget _doseRow(Map<String, dynamic> data) {
     final name = (data['medicineName'] ?? '').toString();
+    final dosage = (data['dosage'] ?? '').toString();
     final time = (data['scheduledTime'] ?? '').toString();
     final dateKey = (data['dateKey'] ?? '').toString();
     final status = (data['status'] ?? 'pending').toString();
@@ -411,28 +457,29 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
                   ),
                 ),
                 const SizedBox(height: 3),
+                Text(
+                  'Dosage: ${dosage.isEmpty ? '-' : dosage}',
+                  style: const TextStyle(fontSize: 14, color: Color(0xFF6B7280)),
+                ),
+                const SizedBox(height: 2),
                 Row(
                   children: [
-                    const Icon(Icons.schedule,
-                        size: 16, color: Color(0xFF6B7280)),
+                    const Icon(Icons.schedule, size: 16, color: Color(0xFF6B7280)),
                     const SizedBox(width: 5),
                     Text(
                       time.isEmpty ? '--:--' : time,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        color: Color(0xFF6B7280),
-                      ),
+                      style: const TextStyle(fontSize: 15, color: Color(0xFF6B7280)),
                     ),
                     const SizedBox(width: 12),
-                    const Icon(Icons.calendar_today_outlined,
-                        size: 16, color: Color(0xFF6B7280)),
+                    const Icon(
+                      Icons.calendar_today_outlined,
+                      size: 16,
+                      color: Color(0xFF6B7280),
+                    ),
                     const SizedBox(width: 5),
                     Text(
                       _formatDateKey(dateKey),
-                      style: const TextStyle(
-                        fontSize: 15,
-                        color: Color(0xFF6B7280),
-                      ),
+                      style: const TextStyle(fontSize: 15, color: Color(0xFF6B7280)),
                     ),
                   ],
                 ),
@@ -468,12 +515,25 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
           stored: doc.data(),
           domain: 'dose_log',
         );
+        plain['_docId'] = doc.id;
         plain['updatedAt'] =
             (doc.data()['updatedAt'] as Timestamp?)?.millisecondsSinceEpoch ?? 0;
         result.add(plain);
       } catch (_) {}
     }
     return result;
+  }
+
+  Future<Set<String>> _loadCaregiverPatientMedicineIds(String caregiverUid) async {
+    if (_selectedPatientRecordId.isEmpty) {
+      return const <String>{};
+    }
+    final snapshot = await FirebaseFirestore.instance
+        .collection('medicines')
+        .where('userId', isEqualTo: caregiverUid)
+        .where('targetPatientRecordId', isEqualTo: _selectedPatientRecordId)
+        .get();
+    return snapshot.docs.map((doc) => doc.id).toSet();
   }
 
   @override
@@ -485,6 +545,43 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
         body: Center(child: Text(l10n.pleaseLoginAgain)),
       );
     }
+    if (_isRoleLoading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (_isCaregiver && _caregiverPatients.isEmpty) {
+      return Scaffold(
+        appBar: AppBar(
+          automaticallyImplyLeading: false,
+          flexibleSpace: const AppBarPulseBackground(),
+          leading: Builder(
+            builder: (context) => IconButton(
+              icon: const Icon(Icons.menu),
+              onPressed: () => Scaffold.of(context).openDrawer(),
+            ),
+          ),
+          title: const Padding(
+            padding: EdgeInsets.only(top: 4),
+            child: Text('Adherence History'),
+          ),
+        ),
+        drawer: const AppNavigationDrawer(
+          currentRoute: MyApp.routeAdherence,
+        ),
+        body: const Center(
+          child: Text('No patients linked to this caregiver yet'),
+        ),
+      );
+    }
+
+    final logsStream = _isCaregiver
+        ? FirebaseFirestore.instance.collection('dose_logs').snapshots()
+        : FirebaseFirestore.instance
+            .collection('dose_logs')
+            .where('patientId', isEqualTo: uid)
+            .snapshots();
 
     return Scaffold(
       appBar: AppBar(
@@ -506,10 +603,7 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
       ),
       floatingActionButton: const ChatbotFab(heroTag: 'chatbot_adherence'),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: FirebaseFirestore.instance
-            .collection('dose_logs')
-            .where('patientId', isEqualTo: uid)
-            .snapshots(),
+        stream: logsStream,
         builder: (context, snapshot) {
           if (snapshot.hasError) {
             return Center(child: Text(l10n.adherenceHistory));
@@ -525,81 +619,126 @@ class _AdherenceScreenState extends State<AdherenceScreen> {
               if (decryptedSnapshot.connectionState == ConnectionState.waiting) {
                 return const Center(child: CircularProgressIndicator());
               }
-              final historyDocs = decryptedSnapshot.data ?? const <Map<String, dynamic>>[];
-              historyDocs.sort((a, b) {
-                final ad = (a['dateKey'] ?? '').toString();
-                final bd = (b['dateKey'] ?? '').toString();
-                if (ad != bd) return bd.compareTo(ad);
-                final at = (a['updatedAt'] ?? 0) as int;
-                final bt = (b['updatedAt'] ?? 0) as int;
-                return bt.compareTo(at);
-              });
-
-              final onlyTakenMissed = historyDocs.where((doc) {
-                final status = (doc['status'] ?? '').toString();
-                return status == 'taken' || status == 'missed';
-              }).toList();
-              final filteredDocs = _applyFilters(onlyTakenMissed);
-              final takenCount = filteredDocs
-                  .where((d) => (d['status'] ?? '').toString() == 'taken')
-                  .length;
-              final missedCount = filteredDocs
-                  .where((d) => (d['status'] ?? '').toString() == 'missed')
-                  .length;
-              return ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              _filterBar(),
-              const SizedBox(height: 14),
-              Row(
-                children: [
-                  Expanded(
-                    child: _metricCard(
-                      icon: Icons.check_circle,
-                      iconColor: const Color(0xFF10B981),
-                      label: l10n.taken,
-                      value: '$takenCount',
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: _metricCard(
-                      icon: Icons.cancel,
-                      iconColor: const Color(0xFFEF4444),
-                      label: l10n.missed,
-                      value: '$missedCount',
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              _sectionTitle(
-                l10n.doseHistory,
-                trailing: TextButton.icon(
-                  onPressed: _isClearing ? null : () => _clearHistory(uid),
-                  icon: _isClearing
-                      ? const SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.delete_sweep_outlined),
-                  label: Text(l10n.clearAllHistory),
-                ),
-              ),
-              const SizedBox(height: 10),
-              _doseHistoryCard(filteredDocs),
-              const SizedBox(height: 20),
-            ],
-          );
+              final allLogs = decryptedSnapshot.data ?? const <Map<String, dynamic>>[];
+              if (!_isCaregiver) {
+                final filtered = _buildFilteredHistory(allLogs, null);
+                return _buildHistoryLayout(filtered, uid, l10n);
+              }
+              return FutureBuilder<Set<String>>(
+                future: _loadCaregiverPatientMedicineIds(uid),
+                builder: (context, medicineIdSnapshot) {
+                  if (medicineIdSnapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  final medicineIds = medicineIdSnapshot.data ?? const <String>{};
+                  final filtered = _buildFilteredHistory(allLogs, medicineIds);
+                  return _buildHistoryLayout(filtered, uid, l10n);
+                },
+              );
             },
           );
         },
       ),
+    );
+  }
+
+  List<Map<String, dynamic>> _buildFilteredHistory(
+    List<Map<String, dynamic>> allLogs,
+    Set<String>? allowedMedicineIds,
+  ) {
+    final statusLogs = allLogs.where((doc) {
+      final status = (doc['status'] ?? '').toString();
+      return status == 'taken' || status == 'missed';
+    }).toList();
+
+    final scoped = (!_isCaregiver || allowedMedicineIds == null)
+        ? statusLogs
+        : statusLogs.where((doc) {
+            final medicineId = (doc['medicineId'] ?? '').toString();
+            return medicineId.isNotEmpty && allowedMedicineIds.contains(medicineId);
+          }).toList();
+    scoped.sort((a, b) {
+      final ad = (a['dateKey'] ?? '').toString();
+      final bd = (b['dateKey'] ?? '').toString();
+      if (ad != bd) return bd.compareTo(ad);
+      final at = (a['updatedAt'] ?? 0) as int;
+      final bt = (b['updatedAt'] ?? 0) as int;
+      return bt.compareTo(at);
+    });
+    return _applyFilters(scoped);
+  }
+
+  Widget _buildHistoryLayout(
+    List<Map<String, dynamic>> filteredDocs,
+    String uid,
+    AppLocalizations l10n,
+  ) {
+    final takenCount = filteredDocs
+        .where((d) => (d['status'] ?? '').toString() == 'taken')
+        .length;
+    final missedCount = filteredDocs
+        .where((d) => (d['status'] ?? '').toString() == 'missed')
+        .length;
+    final clearDocIds = filteredDocs
+        .map((doc) => (doc['_docId'] ?? '').toString())
+        .where((id) => id.isNotEmpty)
+        .toList();
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        if (_isCaregiver) ...[
+          _caregiverPatientSelector(),
+          const SizedBox(height: 10),
+        ],
+        _filterBar(),
+        const SizedBox(height: 14),
+        Row(
+          children: [
+            Expanded(
+              child: _metricCard(
+                icon: Icons.check_circle,
+                iconColor: const Color(0xFF10B981),
+                label: l10n.taken,
+                value: '$takenCount',
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: _metricCard(
+                icon: Icons.cancel,
+                iconColor: const Color(0xFFEF4444),
+                label: l10n.missed,
+                value: '$missedCount',
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        _sectionTitle(
+          l10n.doseHistory,
+          trailing: TextButton.icon(
+            onPressed: _isClearing || clearDocIds.isEmpty
+                ? null
+                : () => _clearHistoryByDocIds(clearDocIds),
+            icon: _isClearing
+                ? const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.delete_sweep_outlined),
+            label: Text(l10n.clearAllHistory),
+          ),
+        ),
+        const SizedBox(height: 10),
+        _doseHistoryCard(filteredDocs),
+        const SizedBox(height: 20),
+      ],
     );
   }
 }

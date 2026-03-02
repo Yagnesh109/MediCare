@@ -8,6 +8,7 @@ import 'package:medicare_app/services/dose_tracking_service.dart';
 import 'package:medicare_app/services/notification_service.dart';
 import 'package:medicare_app/services/phi_e2ee_service.dart';
 import 'package:medicare_app/services/stock_service.dart';
+import 'package:medicare_app/services/user_role_service.dart';
 import 'package:medicare_app/widgets/app_bar_pulse_indicator.dart';
 import 'package:medicare_app/widgets/app_navigation_drawer.dart';
 import 'package:medicare_app/widgets/chatbot_fab.dart';
@@ -24,17 +25,27 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   DateTime? _lastExpiryCleanupAt;
   final Set<String> _expiryDeleteInProgress = <String>{};
   final DoseTrackingService _doseTrackingService = DoseTrackingService.instance;
+  bool _isCaregiver = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _loadRole();
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  Future<void> _loadRole() async {
+    final role = await UserRoleService.instance.getCurrentRole();
+    if (!mounted) return;
+    setState(() {
+      _isCaregiver = role == AppUserRole.caregiver;
+    });
   }
 
   @override
@@ -184,6 +195,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     return '${dateTime.year}-$mm-$dd $hour12:$minute $suffix';
   }
 
+  // Kept for optional future cleanup flow; currently disabled to avoid unintended auto-deletes.
+  // ignore: unused_element
   Future<void> _cleanupExpiredMedicines(List<Medicine> medicines) async {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
@@ -741,7 +754,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
               ],
             ),
-            if (medicineId != null && medicineId.isNotEmpty)
+            if (!_isCaregiver && medicineId != null && medicineId.isNotEmpty)
               FutureBuilder<String>(
                 future: _doseTrackingService
                     .getTodayDoseStatusForMedicine(medicine),
@@ -812,7 +825,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               if (medicines.isNotEmpty) {
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   _runMissedCheckIfNeeded(medicines);
-                  _cleanupExpiredMedicines(medicines);
                 });
               }
 

@@ -65,6 +65,113 @@ class DemoSmsService {
     }
   }
 
+  Future<void> sendPatientMedicineAssignedSms({
+    required String toPhone,
+    required String patientName,
+    required String caregiverName,
+    required String medicineName,
+    required String dosage,
+    required List<String> schedules,
+    required String startDate,
+    required String endDate,
+  }) async {
+    await _ensureDotEnvLoaded();
+
+    if (!isConfigured) {
+      throw Exception(
+        'Twilio SMS is not configured. Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_FROM_NUMBER in .env',
+      );
+    }
+
+    final toNormalized = _normalizePhone(toPhone);
+    if (toNormalized.isEmpty) {
+      throw Exception('Invalid patient phone number: $toPhone');
+    }
+
+    final uri = Uri.parse(
+      'https://api.twilio.com/2010-04-01/Accounts/$_accountSid/Messages.json',
+    );
+
+    final patient = patientName.trim().isEmpty ? 'Patient' : patientName.trim();
+    final caregiver =
+        caregiverName.trim().isEmpty ? 'your caregiver' : caregiverName.trim();
+    final scheduleText = schedules.isEmpty ? '-' : schedules.join(', ');
+    final body = 'Medicare: Hi $patient, $caregiver assigned '
+        '$medicineName ($dosage). Schedule: $scheduleText. '
+        'From ${startDate.trim().isEmpty ? '-' : startDate.trim()} '
+        'to ${endDate.trim().isEmpty ? '-' : endDate.trim()}.';
+
+    final auth = base64Encode(utf8.encode('$_accountSid:$_authToken'));
+
+    final response = await http.post(
+      uri,
+      headers: {
+        'Authorization': 'Basic $auth',
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: {
+        'From': _fromNumber,
+        'To': toNormalized,
+        'Body': body,
+      },
+    );
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(
+        'Twilio SMS failed (${response.statusCode}): ${response.body}',
+      );
+    }
+  }
+
+  Future<void> sendPatientMedicineReminderSms({
+    required String toPhone,
+    required String patientName,
+    required String medicineName,
+    required String dosage,
+    required String scheduledTime,
+    required String dateKey,
+  }) async {
+    await _ensureDotEnvLoaded();
+
+    if (!isConfigured) {
+      throw Exception(
+        'Twilio SMS is not configured. Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_FROM_NUMBER in .env',
+      );
+    }
+
+    final toNormalized = _normalizePhone(toPhone);
+    if (toNormalized.isEmpty) {
+      throw Exception('Invalid patient phone number: $toPhone');
+    }
+
+    final uri = Uri.parse(
+      'https://api.twilio.com/2010-04-01/Accounts/$_accountSid/Messages.json',
+    );
+    final patient = patientName.trim().isEmpty ? 'Patient' : patientName.trim();
+    final body = 'Medicare Reminder: Hi $patient, take $medicineName '
+        '($dosage) at $scheduledTime on $dateKey.';
+    final auth = base64Encode(utf8.encode('$_accountSid:$_authToken'));
+
+    final response = await http.post(
+      uri,
+      headers: {
+        'Authorization': 'Basic $auth',
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: {
+        'From': _fromNumber,
+        'To': toNormalized,
+        'Body': body,
+      },
+    );
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(
+        'Twilio SMS failed (${response.statusCode}): ${response.body}',
+      );
+    }
+  }
+
   String _readEnv(String key) {
     try {
       return dotenv.env[key]?.trim() ?? '';
